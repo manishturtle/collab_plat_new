@@ -1,0 +1,32 @@
+# Core
+Django==5.1.11
+djangorestframework==3.15.1
+
+# Authentication
+djangorestframework-simplejwt==5.3.1
+python-jose[cryptography]==3.3.0
+python-dotenv==1.0.1
+
+# Database
+psycopg2-binary==2.9.9
+
+# Async & WebSockets
+channels==4.1.0
+channels-redis==4.2.0
+redis==5.0.1
+
+# CORS
+django-cors-headers==4.3.1
+
+# Celery
+celery==5.3.6
+flower==2.0.1
+
+# API Documentation
+drf-yasg==1.21.7
+django-filter==24.2
+
+# Utilities
+Pillow==10.3.0
+python-dateutil==2.9.0
+python-memcached==1.59
