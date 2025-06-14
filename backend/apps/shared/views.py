@@ -69,15 +69,32 @@ class TenantLoginView(APIView):
                 logger.info(f"Looking up user with email: {email} in tenant: {tenant.schema_name}")
                 # Get the user from the tenant's schema
                 with schema_context(tenant.schema_name):
-                    user = UserModel.objects.get(email=email, is_active=True)
-                    logger.info(f"Found user: {user.email} (ID: {user.id})")
-                    
-                    # Verify password
-                    if not user.check_password(password):
-                        logger.warning(f"Invalid password for user: {email}")
+                    # First check if user exists
+                    try:
+                        user = UserModel.objects.get(email=email)
+                        logger.info(f"User found: {user.email} (ID: {user.id}, Active: {user.is_active})")
+                        
+                        # Check if user is active
+                        if not user.is_active:
+                            logger.warning(f"Inactive user attempt: {email}")
+                            return JsonResponse(
+                                {'error': 'User account is inactive'},
+                                status=status.HTTP_403_FORBIDDEN
+                            )
+                            
+                        # Verify password
+                        if not user.check_password(password):
+                            logger.warning(f"Invalid password for user: {email}")
+                            return JsonResponse(
+                                {'error': 'Invalid email or password'},
+                                status=status.HTTP_401_UNAUTHORIZED
+                            )
+                            
+                    except UserModel.DoesNotExist:
+                        logger.warning(f"User not found: {email}")
                         return JsonResponse(
-                            {'error': 'Invalid email or password'},
-                            status=status.HTTP_401_UNAUTHORIZED
+                            {'error': 'User not found'},
+                            status=status.HTTP_404_NOT_FOUND
                         )
 
                     # Generate JWT tokens
