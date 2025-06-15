@@ -44,7 +44,6 @@ class ChannelViewSet(TenantAwareAPIView,
         context['request'] = self.request
         return context
 
-    @transaction.atomic
     def create(self, request, *args, **kwargs):
         """
         Create a new chat channel.
@@ -53,20 +52,36 @@ class ChannelViewSet(TenantAwareAPIView,
         2. group: Multi-participant conversations
         3. contextual_object: Conversations tied to a specific context/object
         """
-        from django.db import connection
-        print("Current tenant::", connection.tenant.schema_name)  # Should be 'bingo_travels'
-        # print("Search path:", connection.tenant.get_tenant_database_search_path())
-        # print("Authenticated user:", request.user.id, request.user.email)
-
-        # All validation and default-setting logic is now handled by the serializer.
+        # All validation and default-setting logic is handled by the serializer
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # The serializer's .save() method will now call our custom .create() within the serializer
-        channel = serializer.save()
-        # We re-serialize the instance to include all fields populated on creation
-        # (like 'participations', 'last_message', etc.)
-        response_serializer = self.get_serializer(channel)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        
+        try:
+            with transaction.atomic():
+                # The serializer's .save() method will call our custom .create() within the serializer
+                channel = serializer.save()
+                
+                # Re-serialize the instance to include all fields populated on creation
+                response_serializer = self.get_serializer(channel)
+                return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+                
+        except Exception as e:
+            # Log the error and return a proper error response
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception("Error creating channel")
+            
+            # Check for specific error types and return appropriate responses
+            if 'unique_constraint' in str(e).lower() or 'duplicate' in str(e).lower():
+                return Response(
+                    {'detail': 'A channel with these parameters already exists'},
+                    status=status.HTTP_409_CONFLICT
+                )
+                
+            return Response(
+                {'detail': 'An error occurred while creating the channel'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=['get'])
     def messages(self, request, pk=None):

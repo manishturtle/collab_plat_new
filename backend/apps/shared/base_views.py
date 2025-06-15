@@ -1,7 +1,8 @@
+from django.db import connection
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from django_tenants.utils import schema_context
+from django_tenants.utils import schema_context, get_tenant_model
 from rest_framework import status
 from rest_framework.response import Response
 
@@ -15,13 +16,10 @@ class TenantAwareAPIView(APIView):
     authentication_classes = [TenantJWTAuthentication]
     permission_classes = [IsAuthenticated]
     
-    def initial(self, request, *args, **kwargs):
+    def setup_tenant_context(self, request):
         """
-        Run before anything else in the view.
-        Sets the schema context based on the JWT token.
+        Set up tenant context based on the JWT token.
         """
-        super().initial(request, *args, **kwargs)
-        
         # Get schema_name from token
         auth_header = request.META.get('HTTP_AUTHORIZATION', '').split()
         
@@ -32,25 +30,61 @@ class TenantAwareAPIView(APIView):
                 schema_name = validated_token.get('schema_name')
                 
                 if schema_name:
-                    # Set the schema for this request
-                    print("schema_name::", schema_name)
-                    request.tenant_schema = schema_name
-                    
+                    # Get the tenant model
+                    TenantModel = get_tenant_model()
+                    try:
+                        # Get the tenant and set it on the connection
+                        tenant = TenantModel.objects.get(schema_name=schema_name)
+                        connection.set_tenant(tenant)
+                        request.tenant = tenant
+                        return True
+                    except TenantModel.DoesNotExist:
+                        return False
+                        
             except (InvalidToken, TokenError) as e:
                 # Token is invalid, permission classes will handle this
                 pass
+        return False
+    
+    def initial(self, request, *args, **kwargs):
+        """
+        Run before anything else in the view.
+        Sets up the tenant context.
+        """
+        super().initial(request, *args, **kwargs)
+        
+        # Set up tenant context
+        if not hasattr(request, 'tenant'):
+            if not self.setup_tenant_context(request):
+                return Response(
+                    {'detail': 'Unable to determine tenant context'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
     
     def dispatch(self, request, *args, **kwargs):
         """
-        Override dispatch to set the schema context.
+        Override dispatch to handle tenant context and transactions.
         """
-        # Call the parent's dispatch to run authentication/permission checks
-        response = super().dispatch(request, *args, **kwargs)
+        # Ensure tenant is set up
+        if not hasattr(request, 'tenant'):
+            return Response(
+                {'detail': 'Unable to determine tenant context'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
-        # Set schema context if we have a schema
-        if hasattr(request, 'tenant_schema'):
-            with schema_context(request.tenant_schema):
-                return self.finalize_response(request, response, *args, **kwargs)
+        # Process the request within the tenant's schema context
+        with schema_context(request.tenant.schema_name):
+            try:
+                # Call the parent's dispatch to handle the request
+                response = super().dispatch(request, *args, **kwargs)
+                return response
+                
+            except Exception as e:
+                # Log the error and re-raise
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.exception("Error processing request")
+                raise
         
         return self.finalize_response(request, response, *args, **kwargs)
     

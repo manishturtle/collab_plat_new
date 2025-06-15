@@ -278,9 +278,10 @@ class ChatChannelSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         participants = validated_data.pop('participants', [])
         request = self.context.get('request')
+        channel_type = validated_data.get('channel_type')
         
         # For direct messages, check if a channel already exists between these users
-        if validated_data.get('channel_type') == 'direct' and participants:
+        if channel_type == 'direct' and participants:
             try:
                 # Get the participant ID (already validated in the validate method)
                 participant_id = participants[0].id if hasattr(participants[0], 'id') else participants[0]
@@ -313,7 +314,51 @@ class ChatChannelSerializer(serializers.ModelSerializer):
             except Exception as e:
                 logger.warning(f"Error checking for existing direct message channel: {str(e)}")
         
-        # If we get here, either it's not a direct message or no existing channel was found
+        # For group channels, check if a channel with the same name already exists
+        elif channel_type == 'group' and 'name' in validated_data:
+            existing_channel = ChatChannel.objects.filter(
+                channel_type='group',
+                name=validated_data['name']
+            ).first()
+            
+            if existing_channel:
+                # Ensure all participants are added to the existing channel
+                all_participant_ids = [p.id if hasattr(p, 'id') else p for p in participants]
+                all_participant_ids.append(request.user.id)
+                
+                for participant_id in all_participant_ids:
+                    if not ChannelParticipant.objects.filter(
+                        channel=existing_channel,
+                        user_id=participant_id
+                    ).exists():
+                        self._add_participants(existing_channel, [participant_id], request.user)
+                
+                return existing_channel
+        
+        # For contextual chats, check if a channel with the same context already exists
+        elif channel_type == 'contextual_object':
+            existing_channel = ChatChannel.objects.filter(
+                channel_type='contextual_object',
+                host_application_id=validated_data.get('host_application_id'),
+                context_object_type=validated_data.get('context_object_type'),
+                context_object_id=validated_data.get('context_object_id')
+            ).first()
+            
+            if existing_channel:
+                # Ensure all participants are added to the existing channel
+                all_participant_ids = [p.id if hasattr(p, 'id') else p for p in participants]
+                all_participant_ids.append(request.user.id)
+                
+                for participant_id in all_participant_ids:
+                    if not ChannelParticipant.objects.filter(
+                        channel=existing_channel,
+                        user_id=participant_id
+                    ).exists():
+                        self._add_participants(existing_channel, [participant_id], request.user)
+                
+                return existing_channel
+        
+        # If we get here, create a new channel
         try:
             # Create the channel - ensure we're using IDs not user objects
             channel = ChatChannel.objects.create(
@@ -328,39 +373,13 @@ class ChatChannelSerializer(serializers.ModelSerializer):
             return channel
             
         except Exception as e:
-            # Handle unique constraint violation
-            if 'unique_contextual_chat' in str(e):
-                # Try to find the existing channel
-                existing = ChatChannel.objects.filter(
-                    host_application_id=validated_data.get('host_application_id'),
-                    context_object_type=validated_data.get('context_object_type'),
-                    context_object_id=validated_data.get('context_object_id')
-                ).first()
-                
-                if existing:
-                    # Ensure the current user is a participant
-                    if not ChannelParticipant.objects.filter(
-                        channel=existing,
-                        user_id=request.user.id
-                    ).exists():
-                        self._add_participants(existing, [request.user.id], request.user)
-                    
-                    # Ensure other participants are added
-                    for participant in participants:
-                        participant_id = participant.id if hasattr(participant, 'id') else participant
-                        if not ChannelParticipant.objects.filter(
-                            channel=existing,
-                            user_id=participant_id
-                        ).exists():
-                            self._add_participants(existing, [participant_id], request.user)
-                    
-                    return existing
-            
-            # Re-raise the exception if we couldn't handle it
-            raise serializers.ValidationError({
-                'detail': 'A chat with these parameters already exists',
-                'code': 'channel_exists'
-            })
+            logger.error(f"Error creating channel: {str(e)}")
+            if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
+                raise serializers.ValidationError({
+                    'detail': 'A channel with these parameters already exists',
+                    'code': 'channel_exists'
+                })
+            raise
 
     def _add_participants(self, channel, participant_ids, current_user):
         """Helper method to add participants to a channel"""
