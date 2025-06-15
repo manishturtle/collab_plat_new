@@ -16,7 +16,6 @@ from .serializers import (
 )
 from apps.shared.base_views import TenantAwareAPIView
 
-
 class ChannelViewSet(TenantAwareAPIView,
                      mixins.ListModelMixin,
                      mixins.RetrieveModelMixin,

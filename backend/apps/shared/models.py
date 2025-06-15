@@ -103,9 +103,8 @@ class TenantUserManager(UserManager):
 
         return self._create_user(email, password, **extra_fields)
 
-class TenantUserModel(BaseTenantModel, AbstractBaseUser, PermissionsMixin):
-    """
-    Model for tenant users.
+class TenantUserModel(AbstractBaseUser, PermissionsMixin, BaseTenantModel):
+    """Model for tenant users.
     This is a concrete model that will be used across all tenants.
     """
     email = models.EmailField(unique=True, db_index=True)
@@ -117,6 +116,18 @@ class TenantUserModel(BaseTenantModel, AbstractBaseUser, PermissionsMixin):
     is_superuser = models.BooleanField(default=False)
     date_joined = models.DateTimeField(default=timezone.now)
     last_login = models.DateTimeField(null=True, blank=True)
+    
+    # Presence tracking
+    is_online = models.BooleanField(default=False, db_index=True)
+    last_seen = models.DateTimeField(null=True, blank=True, db_index=True)
+    
+    # User status
+    status = models.CharField(max_length=50, blank=True, null=True, help_text="User's custom status message")
+    status_emoji = models.CharField(max_length=10, blank=True, null=True, help_text="Emoji representing user's status")
+    
+    # User preferences
+    avatar_url = models.URLField(blank=True, null=True)
+    timezone = models.CharField(max_length=50, default='UTC')
 
     objects = TenantUserManager()
 

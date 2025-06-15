@@ -44,8 +44,10 @@ SHARED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'channels',
+    'channels_redis',
     'drf_yasg',
     'drf_spectacular',  # For API documentation
+    'django_filters',  # For filtering in DRF
     
     # Local apps (shared between tenants)
     # 'apps.shared.apps.SharedConfig',
@@ -107,10 +109,27 @@ AUTHENTICATION_BACKENDS = [
 
 ROOT_URLCONF = 'config.urls'
 
+import os
+
+# Build paths inside the project like this: os.path.join(BASE_DIR, ...)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/5.1/howto/static-files/
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
+# Media files
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -123,9 +142,38 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'config.wsgi.application'
+# WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
 
+# Channels Configuration
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [('127.0.0.1', 6379)],  # Using default Redis port
+            'symmetric_encryption_keys': [SECRET_KEY],
+            'channel_capacity': {
+                'http.request': 200,
+                'http.response!*': 100,
+                'websocket.send*': 50,
+            },
+            'capacity': 1000,  # default 100
+            'expiry': 10,  # default 60
+        },
+    },
+}
+
+# WebSocket configuration
+WEBSOCKET_URL = '/ws/'
+
+# Timeout for WebSocket connections (in seconds)
+WEBSOCKET_TIMEOUT = 3600  # 1 hour
+
+# Maximum message size for WebSocket (in bytes)
+WEBSOCKET_MAX_MESSAGE_SIZE = 1024 * 1024  # 1MB
+
+# Enable/disable WebSocket compression
+WEBSOCKET_COMPRESSION = True
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
@@ -237,15 +285,15 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Media files (Uploaded by users)
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Additional locations of static files
 STATICFILES_DIRS = [
-    BASE_DIR / 'static',
+    os.path.join(BASE_DIR, 'static'),
 ]
 
 # Default primary key field type
@@ -269,24 +317,67 @@ CORS_ALLOW_CREDENTIALS = True
 
 # JWT Authentication settings are now defined at the top of the file
 
-# Add this to your settings.py
+# Django Channels and WebSocket Configuration
+ASGI_APPLICATION = 'config.asgi.application'
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
+            "symmetric_encryption_keys": [SECRET_KEY],
+        },
+    },
+}
+
+# WebSocket settings
+WEBSOCKET_URL = '/ws/'
+CHANNEL_LAYER_REDIS_CONNECTION = {
+    'host': 'localhost',
+    'port': 6379,
+    'db': 0,
+}
+
+# Logging configuration
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': 'debug.log',
+            'formatter': 'verbose',
         },
     },
     'loggers': {
-        'apps.shared': {
-            'handlers': ['console'],
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'apps.chat': {
+            'handlers': ['console', 'file'],
             'level': 'DEBUG',
             'propagate': True,
         },
         'django_tenants': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+        'channels': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
             'propagate': True,
         },
     },

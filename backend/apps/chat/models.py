@@ -36,6 +36,7 @@ class ChatChannel(BaseTenantModel):
     # Required fields from BaseTenantModel
     company_id = models.IntegerField(default=1, editable=False)
     client_id = models.IntegerField(default=1, editable=False)
+
     
     # ManyToMany field for participants
     participants = models.ManyToManyField(

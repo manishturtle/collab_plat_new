@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #messages { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; margin-bottom: 10px; }
+        .log { margin: 5px 0; padding: 5px; border-radius: 3px; }
+        .success { background-color: #dff0d8; color: #3c763d; }
+        .error { background-color: #f2dede; color: #a94442; }
+        .info { background-color: #d9edf7; color: #31708f; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <div id="messages"></div>
+    <button id="connect">Connect</button>
+    <button id="disconnect" disabled>Disconnect</button>
+
+    <script>
+        const messages = document.getElementById('messages');
+        const connectBtn = document.getElementById('connect');
+        const disconnectBtn = document.getElementById('disconnect');
+        let socket = null;
+
+        function log(message, type = 'info') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `log ${type}`;
+            messageDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        connectBtn.addEventListener('click', () => {
+            log('Connecting to WebSocket...');
+            
+            // Get JWT token from localStorage or prompt the user
+            const token = localStorage.getItem('access_token') || 
+                         prompt('Please enter your JWT token:');
+            
+            if (!token) {
+                log('No token provided. Please log in first.', 'error');
+                return;
+            }
+            
+            // Store token for future use
+            localStorage.setItem('access_token', token);
+            
+            // Include token in WebSocket URL with valid channel ID
+            const channelId = 'fba1f391-1919-4cec-86e1-7f2c6671a0cc';
+            const wsUrl = `ws://localhost:8000/ws/chat/${channelId}/?token=${encodeURIComponent(token)}`;
+            
+            try {
+                socket = new WebSocket(wsUrl);
+                
+                socket.onopen = () => {
+                    log('WebSocket connection established!', 'success');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    
+                    // Send a test message
+                    socket.send(JSON.stringify({
+                        'type': 'test.message',
+                        'message': 'Hello from client!',
+                        'token': token  // Include token in the message as well if needed
+                    }));
+                };
+                
+                socket.onmessage = (e) => {
+                    log(`Received: ${e.data}`, 'success');
+                };
+                
+                socket.onclose = () => {
+                    log('WebSocket connection closed', 'info');
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                };
+                
+                socket.onerror = (error) => {
+                    log(`WebSocket error: ${error}`, 'error');
+                };
+                
+            } catch (error) {
+                log(`Error creating WebSocket: ${error}`, 'error');
+            }
+        });
+        
+        disconnectBtn.addEventListener('click', () => {
+            if (socket) {
+                log('Closing WebSocket connection...');
+                socket.close();
+            }
+        });
+    </script>
+</body>
+</html>
