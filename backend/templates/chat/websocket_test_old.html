@@ -19,87 +19,12 @@
         .log {
             margin-bottom: 5px;
         }
-        .error { color: #d32f2f; font-weight: bold; }
-        .success { color: #388e3c; }
-        .info { color: #1976d2; }
+        .error { color: red; }
+        .success { color: green; }
+        .info { color: blue; }
         button {
             margin-right: 10px;
             padding: 8px 12px;
-            background-color: #2196f3;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0d8bf2;
-        }
-        button:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
-        }
-        .message {
-            padding: 8px 12px;
-            margin-bottom: 8px;
-            border-radius: 8px;
-            max-width: 80%;
-        }
-        .own-message {
-            background-color: #e3f2fd; 
-            margin-left: auto;
-            border-top-right-radius: 0;
-        }
-        .other-message {
-            background-color: #f5f5f5;
-            margin-right: auto;
-            border-top-left-radius: 0;
-        }
-        .system-message {
-            text-align: center;
-            font-style: italic;
-            color: #757575;
-            margin: 8px 0;
-        }
-        .message-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 4px;
-            font-size: 0.85em;
-        }
-        .username {
-            font-weight: bold;
-            color: #333;
-        }
-        .timestamp {
-            color: #757575;
-        }
-        .json {
-            background-color: #f8f9fa;
-            padding: 8px;
-            border-radius: 4px;
-            overflow-x: auto;
-            max-width: 100%;
-            font-family: monospace;
-        }
-        .message-input-container {
-            display: flex;
-            margin-top: 10px;
-        }
-        #message-input {
-            flex-grow: 1;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            margin-right: 8px;
-        }
-        .timestamp {
-            color: #757575;
-            font-size: 0.9em;
-            margin-right: 5px;
-        }
-        .received-label {
-            font-weight: bold;
-            color: #388e3c;
         }
         .input-group {
             margin-bottom: 15px;
@@ -144,10 +69,7 @@
     <div id="messages"></div>
     <button id="connect">Connect WebSocket</button>
     <button id="disconnect" disabled>Disconnect</button>
-    <div class="message-input-container">
-        <input type="text" id="message-input" placeholder="Type a message..." disabled>
-        <button id="send-message" disabled>Send Message</button>
-    </div>
+    <button id="send-message" disabled>Send Test Message</button>
 
     <script>
         const messages = document.getElementById('messages');
@@ -166,61 +88,10 @@
         channelInput.value = localStorage.getItem('channel_id') || 'fba1f391-1919-4cec-86e1-7f2c6671a0cc';
         portInput.value = localStorage.getItem('ws_port') || '8002';
 
-        function formatJSON(json) {
-            if (typeof json === 'string') {
-                try {
-                    json = JSON.parse(json);
-                } catch (e) {
-                    return json; // Return as is if not parseable
-                }
-            }
-
-            // Format message content based on type
-            if (json.type === 'chat.message' && json.message) {
-                const msg = json.message;
-                return `
-                    <div class="message ${msg.is_own ? 'own-message' : 'other-message'}">
-                        <div class="message-header">
-                            <span class="username">${msg.username || 'Unknown'}</span>
-                            <span class="timestamp">${new Date(msg.timestamp).toLocaleTimeString()}</span>
-                        </div>
-                        <div class="message-content">
-                            ${msg.content}
-                        </div>
-                        <div class="message-meta">
-                            ${msg.is_read ? '<span class="read-status">✓ Read</span>' : ''}
-                        </div>
-                    </div>
-                `;
-            } else if (json.type === 'user.join' || json.type === 'user.leave') {
-                return `<div class="system-message">
-                    User <strong>${json.username || json.user_id}</strong> has ${json.type === 'user.join' ? 'joined' : 'left'} the chat
-                </div>`;
-            } else if (json.type === 'typing.status') {
-                return `<div class="typing-indicator">
-                    ${json.username} is ${json.is_typing ? 'typing...' : 'stopped typing'}
-                </div>`;
-            }
-            
-            // Default handling for other message types
-            return `<pre class="json">${JSON.stringify(json, null, 2)}</pre>`;
-        }
-        
         function log(message, type = 'info') {
             const messageDiv = document.createElement('div');
             messageDiv.className = `log ${type}`;
-            
-            // Format timestamp
-            const timestamp = `[${new Date().toLocaleTimeString()}]`;
-            
-            // Check if message is JSON and needs special formatting
-            if (type === 'success' && message.startsWith('Received:')) {
-                const jsonContent = message.substring(10); // Remove 'Received: ' prefix
-                messageDiv.innerHTML = `<span class="timestamp">${timestamp}</span> <span class="received-label">Received:</span> ${formatJSON(jsonContent)}`;
-            } else {
-                messageDiv.innerHTML = `<span class="timestamp">${timestamp}</span> ${message}`;
-            }
-            
+            messageDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
             messages.appendChild(messageDiv);
             messages.scrollTop = messages.scrollHeight;
         }
@@ -274,7 +145,6 @@
                     connectBtn.disabled = true;
                     disconnectBtn.disabled = false;
                     sendMsgBtn.disabled = false;
-                    document.getElementById('message-input').disabled = false;
                 };
                 
                 socket.onmessage = (e) => {
@@ -291,7 +161,6 @@
                     connectBtn.disabled = false;
                     disconnectBtn.disabled = true;
                     sendMsgBtn.disabled = true;
-                    document.getElementById('message-input').disabled = true;
                 };
                 
                 socket.onerror = (error) => {
@@ -310,7 +179,6 @@
                 connectBtn.disabled = false;
                 disconnectBtn.disabled = true;
                 sendMsgBtn.disabled = true;
-                document.getElementById('message-input').disabled = true;
             }
         });
         
@@ -320,35 +188,16 @@
                 return;
             }
             
-            // Get message content from input
-            const messageInput = document.getElementById('message-input');
-            const content = messageInput.value.trim();
-            
-            if (!content) {
-                log('Please enter a message', 'error');
-                return;
-            }
-            
             try {
-                // Send a chat message
+                // Send a test message
                 socket.send(JSON.stringify({
-                    'type': 'chat.message',
-                    'message': content,
-                    'channel_id': channelInput.value.trim() || localStorage.getItem('channel_id')
+                    'type': 'test.message',
+                    'message': 'Hello from client!'
                 }));
                 
-                log('Message sent: ' + content, 'success');
-                messageInput.value = ''; // Clear input after sending
+                log('Test message sent', 'success');
             } catch (error) {
                 log(`Error sending message: ${error.message}`, 'error');
-            }
-        });
-        
-        // Add keypress event for message input
-        document.getElementById('message-input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !sendMsgBtn.disabled) {
-                e.preventDefault();
-                sendMsgBtn.click();
             }
         });
         
