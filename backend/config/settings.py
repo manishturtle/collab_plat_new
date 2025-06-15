@@ -66,13 +66,10 @@ TENANT_APPS = [
 TENANT_APPS = [app for app in TENANT_APPS if app != 'apps.shared']
 INSTALLED_APPS = SHARED_APPS + TENANT_APPS
 
-# Tenant configuration - using existing tables
-TENANT_MODEL = 'shared.Tenant'  # Our custom model that maps to the existing table
-TENANT_DOMAIN_MODEL = 'shared.Domain'  # Our custom model that maps to the existing domain table
 
 # Required by django-tenants
 MIDDLEWARE = [
-    'django_tenants.middleware.main.TenantMainMiddleware',  # Must be first
+    'apps.shared.middleware.CustomTenantMiddleware',  # Our custom tenant middleware
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -87,6 +84,11 @@ MIDDLEWARE = [
 DATABASE_ROUTERS = (
     'django_tenants.routers.TenantSyncRouter',
 )
+
+# Tenant configuration - using existing tables
+TENANT_MODEL = 'shared.Tenant'  # Our custom model that maps to the existing table
+TENANT_DOMAIN_MODEL = 'shared.Domain'  # Our custom model that maps to the existing domain table
+
 
 # Public schema (shared) and tenant-specific schemas
 PUBLIC_SCHEMA_NAME = 'public'
@@ -138,6 +140,7 @@ DATABASES = {
         'PASSWORD': 'Qu1ckAss1st@123',
         'HOST': 'localhost', 
         'PORT': '5432',
+      
     }
 }
 
@@ -150,6 +153,7 @@ from datetime import timedelta
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
+        'apps.shared.authentication.TenantJWTAuthentication',  # Our custom JWT auth
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',  # For browsable API
         'rest_framework.authentication.BasicAuthentication',

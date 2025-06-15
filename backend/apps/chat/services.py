@@ -7,80 +7,67 @@ from .models import ChatChannel, ChannelParticipant, ChatMessage, MessageReadSta
 from .selectors import get_channel_by_id
 
 @transaction.atomic
-def create_channel(
-    *, 
-    user: User, 
-    name: str = None, 
-    participants: List[User] = None,
-    channel_type: str = ChatChannel.ChannelType.GROUP,
-    context_data: Optional[Dict[str, Any]] = None
-) -> ChatChannel:
+# apps/chat/services.py
+
+def create_channel(channel_type, participants, name=None, host_application_id=None,
+                  context_object_type=None, context_object_id=None, created_by=None):
     """
-    Creates a new chat channel and adds participants.
-    The creator is automatically made an admin.
+    Service function to create different types of channels
     
     Args:
-        user: The user creating the channel
-        name: Optional name for the channel (auto-generated for direct messages)
-        participants: List of users to add to the channel (can be User objects or user IDs)
-        channel_type: Type of channel (direct, group, or contextual)
-        context_data: Optional context data for contextual channels
-    """
-    # Convert participant IDs to User objects if needed
-    participant_users = []
-    participants = participants or []
+        channel_type (str): Type of channel ('direct', 'group', 'contextual_object')
+        participants (list): List of user IDs to add as participants
+        name (str): Channel name (required for group and contextual channels)
+        host_application_id (str): ID of the host application
+        context_object_type (str): Type of the context object
+        context_object_id (str): ID of the context object
+        created_by (User): User creating the channel
     
-    # If participants are passed as integers (IDs), fetch the user objects
-    for p in participants:
-        if isinstance(p, int) or isinstance(p, str) and p.isdigit():
-            try:
-                p_id = int(p)
-                p_user = User.objects.get(id=p_id)
-                participant_users.append(p_user)
-            except User.DoesNotExist:
-                # Skip invalid user IDs
-                continue
-        else:
-            # It's already a user object
-            participant_users.append(p)
-            
-    # Ensure unique participants
-    all_participants = set(participant_users)
-    all_participants.add(user)  # Always include the creator
-
-    # For direct messages, ensure only 2 participants
-    if channel_type == ChatChannel.ChannelType.DIRECT:
-        if len(all_participants) != 2:
-            raise ValueError("Direct messages must have exactly 2 participants")
-        # Generate a consistent name for direct messages
-        name = " & ".join(sorted([p.get_full_name() or p.email for p in all_participants]))
+    Returns:
+        ChatChannel: The created channel
+    """
+    from .models import ChatChannel, ChannelParticipant
+    # Validate input
+    if not created_by:
+        raise ValueError("created_by user is required")
+    
+    if channel_type not in [t[0] for t in ChatChannel.ChannelType.choices]:
+        raise ValueError(f"Invalid channel_type. Must be one of: {[t[0] for t in ChatChannel.ChannelType.choices]}")
+    
+    if channel_type in ['group', 'contextual_object'] and not name:
+        raise ValueError("Name is required for group and contextual channels")
+    
+    if channel_type == 'direct' and len(participants) != 1:
+        raise ValueError("Direct messages must have exactly one participant")
     
     # Create the channel
     channel = ChatChannel.objects.create(
-        name=name,
         channel_type=channel_type,
-        created_by=user.id,
-        updated_by=user.id,
-        **context_data or {}
+        name=name,
+        host_application_id=host_application_id or 'chat_app',
+        context_object_type=context_object_type or f"{channel_type}_channel",
+        context_object_id=context_object_id or str(uuid.uuid4()),
+        created_by=created_by.id,
+        updated_by=created_by.id
     )
     
     # Add participants
-    participant_objects = []
-    for participant in all_participants:
-        role = ChannelParticipant.Role.ADMIN if participant == user else ChannelParticipant.Role.MEMBER
-        participant_objects.append(
-            ChannelParticipant(
+    for user_id in participants:
+        try:
+            user = User.objects.get(id=user_id)
+            print("kkk:", user)
+            ChannelParticipant.objects.create(
                 channel=channel,
-                user=participant,
-                role=role,
-                created_by=user.id,
-                updated_by=user.id
+                user=user,
+                role=ChannelParticipant.Role.ADMIN if user == created_by else ChannelParticipant.Role.MEMBER,
+                created_by=created_by.id,
+                updated_by=created_by.id
             )
-        )
+        except User.DoesNotExist:
+            continue
     
-    ChannelParticipant.objects.bulk_create(participant_objects)
     return channel
-
+    
 @transaction.atomic
 def send_message(
     *, 

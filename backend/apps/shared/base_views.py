@@ -33,6 +33,7 @@ class TenantAwareAPIView(APIView):
                 
                 if schema_name:
                     # Set the schema for this request
+                    print("schema_name::", schema_name)
                     request.tenant_schema = schema_name
                     
             except (InvalidToken, TokenError) as e:

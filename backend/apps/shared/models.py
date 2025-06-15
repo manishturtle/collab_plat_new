@@ -129,7 +129,6 @@ class TenantUserModel(BaseTenantModel, AbstractBaseUser, PermissionsMixin):
         verbose_name_plural = 'Tenant Users'
         ordering = ['email']
 
-
     def get_full_name(self):
         """Return the first_name plus the last_name, with a space in between."""
         full_name = f"{self.first_name or ''} {self.last_name or ''}"
