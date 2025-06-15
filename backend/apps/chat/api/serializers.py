@@ -6,6 +6,16 @@ from ..models import ChatChannel, ChannelParticipant, ChatMessage, MessageReadSt
 from ..selectors import get_unread_message_count
 
 
+class ISODateTimeField(serializers.DateTimeField):
+    """Custom DateTimeField that handles ISO format strings and datetime objects."""
+    def to_representation(self, value):
+        if not value:
+            return None
+        if isinstance(value, str):
+            return value
+        return value.isoformat()
+
+
 class UserSerializer(serializers.ModelSerializer):
     """
     Serializer for user representation in chat.
@@ -40,6 +50,7 @@ class ChannelParticipantSerializer(serializers.ModelSerializer):
     Includes user details and role in the channel.
     """
     user = UserSerializer(read_only=True)
+    created_at = ISODateTimeField(read_only=True)
     
     class Meta:
         model = ChannelParticipant
@@ -47,10 +58,11 @@ class ChannelParticipantSerializer(serializers.ModelSerializer):
             'id',
             'user',
             'role',
-            'created_at'
+            'created_at',
+            'user_id',
+            'channel_id'
         ]
         read_only_fields = fields
-
 
 class ChatMessageSerializer(serializers.ModelSerializer):
     """
@@ -60,6 +72,8 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     sender = UserSerializer(read_only=True)
     is_own = serializers.SerializerMethodField()
     read_by = serializers.SerializerMethodField()
+    created_at = ISODateTimeField(read_only=True)
+    updated_at = ISODateTimeField(read_only=True)
     
     class Meta:
         model = ChatMessage
@@ -72,7 +86,10 @@ class ChatMessageSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             'content_type',
-            'file_url'
+            'file_url',
+            'parent_id',
+            'channel_id',
+            'user_id'
         ]
         read_only_fields = fields
     
@@ -98,6 +115,8 @@ class ChatChannelSerializer(serializers.ModelSerializer):
     )
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
+    created_at = ISODateTimeField(read_only=True)
+    updated_at = ISODateTimeField(read_only=True)
     
     class Meta:
         model = ChatChannel
@@ -113,7 +132,11 @@ class ChatChannelSerializer(serializers.ModelSerializer):
             'updated_at',
             'host_application_id',
             'context_object_type',
-            'context_object_id'
+            'context_object_id',
+            'created_by',
+            'updated_by',
+            'company_id',
+            'client_id'
         ]
         read_only_fields = [
             'id', 
@@ -121,7 +144,11 @@ class ChatChannelSerializer(serializers.ModelSerializer):
             'updated_at',
             'participations',
             'last_message',
-            'unread_count'
+            'unread_count',
+            'created_by',
+            'updated_by',
+            'company_id',
+            'client_id'
         ]
     
     def get_last_message(self, obj):

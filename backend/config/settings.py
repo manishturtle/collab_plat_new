@@ -50,6 +50,7 @@ SHARED_APPS = [
     # Local apps (shared between tenants)
     # 'apps.shared.apps.SharedConfig',
     'apps.shared',
+
 ]
 
 # Custom user model
@@ -60,7 +61,10 @@ TENANT_APPS = [
     'apps.chat',
 ]
 
-INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
+# Combine SHARED_APPS and TENANT_APPS, ensuring no duplicates
+# Remove 'apps.shared' from TENANT_APPS since it's already in SHARED_APPS
+TENANT_APPS = [app for app in TENANT_APPS if app != 'apps.shared']
+INSTALLED_APPS = SHARED_APPS + TENANT_APPS
 
 # Tenant configuration - using existing tables
 TENANT_MODEL = 'shared.Tenant'  # Our custom model that maps to the existing table

@@ -25,6 +25,7 @@ class ChannelViewSet(TenantAwareAPIView,
     ViewSet for managing chat channels.
     Supports listing, retrieving, and creating channels.
     """
+    
     serializer_class = ChatChannelSerializer
     lookup_field = 'pk'
     
@@ -47,30 +48,74 @@ class ChannelViewSet(TenantAwareAPIView,
         """
         Create a new chat channel.
         """
-        serializer = self.get_serializer(data=request.data)
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        # Get the raw data and validate it
+        data = request.data.copy()
+        serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         
-        # Create the channel using our service
-        channel = create_channel(
-            user=request.user,
-            name=serializer.validated_data.get('name'),
-            participants=serializer.validated_data.get('participants', []),
-            channel_type=serializer.validated_data.get('channel_type', ChatChannel.ChannelType.GROUP),
-            context_data={
-                'host_application_id': serializer.validated_data.get('host_application_id'),
-                'context_object_type': serializer.validated_data.get('context_object_type'),
-                'context_object_id': serializer.validated_data.get('context_object_id'),
-            }
-        )
+        # Get the participants from the request
+        participant_ids = data.get('participants', [])
+        participants = []
         
-        # Return the created channel
-        serializer = self.get_serializer(channel)
-        headers = self.get_success_headers(serializer.data)
-        return Response(
-            serializer.data, 
-            status=status.HTTP_201_CREATED, 
-            headers=headers
-        )
+        # Convert participant IDs to User objects
+        for user_id in participant_ids:
+            try:
+                user = User.objects.get(id=user_id)
+                participants.append(user)
+            except (User.DoesNotExist, ValueError, TypeError):
+                # Skip invalid user IDs
+                continue
+        
+        # Create the channel directly using ORM (like in the test command)
+        try:
+            with transaction.atomic():
+                channel = ChatChannel.objects.create(
+                    name=serializer.validated_data.get('name'),
+                    channel_type=serializer.validated_data.get('channel_type', ChatChannel.ChannelType.GROUP),
+                    created_by=request.user.id,
+                    updated_by=request.user.id,
+                    host_application_id=serializer.validated_data.get('host_application_id'),
+                    context_object_type=serializer.validated_data.get('context_object_type'),
+                    context_object_id=serializer.validated_data.get('context_object_id'),
+                )
+                
+                # Add the current user as a participant
+                ChannelParticipant.objects.create(
+                    channel=channel,
+                    user=request.user,
+                    role=ChannelParticipant.Role.ADMIN,
+                    created_by=request.user.id,
+                    updated_by=request.user.id
+                )
+                
+                # Add other participants
+                for participant in participants:
+                    if participant != request.user:  # Don't add the creator again
+                        ChannelParticipant.objects.create(
+                            channel=channel,
+                            user=participant,
+                            role=ChannelParticipant.Role.MEMBER,
+                            created_by=request.user.id,
+                            updated_by=request.user.id
+                        )
+                
+                # Serialize the response
+                serializer = self.get_serializer(channel)
+                headers = self.get_success_headers(serializer.data)
+                return Response(
+                    serializer.data, 
+                    status=status.HTTP_201_CREATED, 
+                    headers=headers
+                )
+                
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
     
     @action(detail=True, methods=['get'])
     def messages(self, request, pk=None):

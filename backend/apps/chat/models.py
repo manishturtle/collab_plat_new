@@ -142,7 +142,7 @@ class ChatMessage(BaseTenantModel):
     )
 
     class Meta:
-        db_table = 'chat_message'  # Changed from chat_chatmessage to chat_message
+        db_table = 'chat_chatmessage'  # Updated to match the actual table name in the database
         ordering = ['created_at']
         indexes = [
             models.Index(fields=['channel', 'created_at']),

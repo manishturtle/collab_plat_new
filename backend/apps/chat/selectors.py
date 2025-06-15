@@ -42,10 +42,18 @@ def get_unread_message_count(channel_id: str, user: User) -> int:
     """
     Get the count of unread messages for a user in a channel.
     """
+    # Get the timestamp of the last read message, if any
+    last_read = MessageReadStatus.objects.filter(
+        user=user,
+        message__channel_id=channel_id
+    ).order_by('-message__created_at').values_list('message__created_at', flat=True).first()
+    
+    # If there are no read messages, return count of all messages in the channel
+    if not last_read:
+        return ChatMessage.objects.filter(channel_id=channel_id).count()
+    
+    # Otherwise, return count of messages created after the last read message
     return ChatMessage.objects.filter(
         channel_id=channel_id,
-        created_at__gt=MessageReadStatus.objects.filter(
-            user=user,
-            message__channel_id=channel_id
-        ).values('message__created_at').order_by('-message__created_at').first() or 0
+        created_at__gt=last_read
     ).count()
