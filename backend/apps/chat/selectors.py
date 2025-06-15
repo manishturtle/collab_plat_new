@@ -36,7 +36,7 @@ def get_messages_for_channel(channel_id: str, user: User, limit: int = 50) -> Qu
     return ChatMessage.objects.filter(
         channel_id=channel_id,
         channel__participations__user=user
-    ).select_related('sender').order_by('-created_at')[:limit]
+    ).select_related('user').order_by('-created_at')[:limit]
 
 def get_unread_message_count(channel_id: str, user: User) -> int:
     """

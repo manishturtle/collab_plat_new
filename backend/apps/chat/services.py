@@ -109,27 +109,71 @@ def send_message(
 def mark_messages_as_read(channel_id: str, user: User) -> int:
     """
     Mark all messages in a channel as read for a user.
+    Updates UserChannelState with the latest read message.
     Returns the number of messages marked as read.
     """
-    # Get unread messages
-    unread_messages = ChatMessage.objects.filter(
+    from .models import UserChannelState
+    
+    # Get the most recent message in the channel
+    last_message = ChatMessage.objects.filter(
         channel_id=channel_id
-    ).exclude(
-        read_statuses__user=user
+    ).order_by('-created_at').first()
+    
+    if not last_message:
+        return 0
+    
+    # Hardcoded tenant IDs as fallback
+    company_id = 1
+    client_id = 1
+    
+    # Get or create UserChannelState for this user and channel
+    user_channel_state, created = UserChannelState.objects.get_or_create(
+        user=user,
+        channel_id=channel_id,
+        defaults={
+            'created_by': user.id,
+            'updated_by': user.id,
+            'company_id': company_id,
+            'client_id': client_id,
+        }
     )
     
-    # Create read statuses
-    read_statuses = [
-        MessageReadStatus(
-            message=msg,
-            user=user,
-            created_by=user.id,
-            updated_by=user.id,
-            company_id=getattr(user, 'company_id', 1),  # Add company_id
-            client_id=getattr(user, 'client_id', 1)     # Add client_id
-        ) 
-        for msg in unread_messages
-    ]
+    # Ensure required fields are set
+    if not user_channel_state.company_id:
+        user_channel_state.company_id = company_id
+    if not user_channel_state.client_id:
+        user_channel_state.client_id = client_id
+    
+    # Update the last read message ID
+    user_channel_state.last_read_message_id = last_message.id
+    user_channel_state.updated_by = user.id
+    user_channel_state.save(update_fields=[
+        'last_read_message_id', 
+        'updated_at', 
+        'updated_by',
+        'company_id',
+        'client_id'
+    ])
+    
+    # Get unread messages (messages after the last read message)
+    unread_messages = ChatMessage.objects.filter(
+        channel_id=channel_id,
+        created_at__gt=user_channel_state.updated_at if not created else timezone.now()
+    )
+    
+    # Create read statuses for unread messages
+    read_statuses = []
+    for msg in unread_messages:
+        read_statuses.append(
+            MessageReadStatus(
+                message=msg,
+                user=user,
+                created_by=user.id,
+                updated_by=user.id,
+                company_id=company_id,
+                client_id=client_id
+            )
+        )
     
     # Bulk create read statuses
     if read_statuses:

@@ -69,7 +69,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     Serializer for chat messages.
     Includes sender details and read status.
     """
-    sender = UserSerializer(read_only=True)
+    user = UserSerializer(read_only=True)
     is_own = serializers.SerializerMethodField()
     read_by = serializers.SerializerMethodField()
     created_at = ISODateTimeField(read_only=True)
@@ -80,7 +80,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'content',
-            'sender',
+            'user',  # Changed from 'sender' to 'user'
             'is_own',
             'read_by',
             'created_at',
@@ -95,7 +95,7 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     
     def get_is_own(self, obj):
         request = self.context.get('request')
-        return request and obj.sender_id == request.user.id
+        return request and obj.user_id == request.user.id  # Changed from sender_id to user_id
     
     def get_read_by(self, obj):
         return list(obj.read_statuses.values_list('user__email', flat=True))

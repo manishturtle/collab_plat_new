@@ -111,6 +111,17 @@ class ChatMessage(BaseTenantModel):
         db_index=True
     )
     content = models.TextField()
+    content_type = models.CharField(
+        max_length=100, 
+        default='text/plain',
+        help_text='MIME type of the message content'
+    )
+    file_url = models.URLField(
+        max_length=500,
+        null=True,
+        blank=True,
+        help_text='URL to the file if the message contains a file'
+    )
     parent = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,
@@ -196,12 +207,25 @@ class MessageReadStatus(BaseTenantModel):
         return f"{self.user.username} read message {self.message_id}"
 
 class UserChannelState(BaseTenantModel):
+    """
+    Tracks user-specific state for each channel they participate in,
+    such as the last read message and notification preferences.
+    """
     user = models.ForeignKey(TenantUserModel, on_delete=models.CASCADE, related_name='chat_channel_states')
     channel = models.ForeignKey(ChatChannel, on_delete=models.CASCADE, related_name='user_states')
     last_read_message_id = models.BigIntegerField(null=True, blank=True)
     is_muted = models.BooleanField(default=False)
+    
+    # Tenant fields required by BaseTenantModel
+    company_id = models.IntegerField(default=1, editable=False)
+    client_id = models.IntegerField(default=1, editable=False)
+    created_by = models.IntegerField(null=True, blank=True, db_column='created_by')
+    updated_by = models.IntegerField(null=True, blank=True, db_column='updated_by')
+    created_at = models.DateTimeField(auto_now_add=True, editable=False)
+    updated_at = models.DateTimeField(auto_now=True, editable=False)
 
     class Meta:
+        db_table = 'chat_userchannelstate'
         unique_together = ('user', 'channel')
         verbose_name = "User Channel State"
         verbose_name_plural = "User Channel States"

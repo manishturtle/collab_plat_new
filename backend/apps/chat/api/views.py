@@ -84,40 +84,54 @@ class ChannelViewSet(TenantAwareAPIView,
             )
 
     @action(detail=True, methods=['get'])
-    def messages(self, request, pk=None):
+    def messages(self, request, pk=None, tenant_slug=None):
         """
         Get messages for a specific channel.
         """
-        channel = self.get_object()
-        messages = get_messages_for_channel(
-            channel_id=channel.id,
-            user=request.user
-        )
+        try:
+            channel = self.get_object()
+            messages = get_messages_for_channel(
+                channel_id=channel.id,
+                user=request.user
+            )
 
-        # Mark messages as read
-        mark_messages_as_read(channel.id, request.user)
+            # Mark messages as read
+            mark_messages_as_read(channel.id, request.user)
 
-        page = self.paginate_queryset(messages)
-        if page is not None:
+            page = self.paginate_queryset(messages)
+            if page is not None:
+                serializer = ChatMessageSerializer(
+                    page,
+                    many=True,
+                    context={'request': request}
+                )
+                return self.get_paginated_response(serializer.data)
+
             serializer = ChatMessageSerializer(
-                page,
+                messages,
                 many=True,
                 context={'request': request}
             )
-            return self.get_paginated_response(serializer.data)
-
-        serializer = ChatMessageSerializer(
-            messages,
-            many=True,
-            context={'request': request}
-        )
-        return Response(serializer.data)
+            return Response(serializer.data)
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception("Error fetching messages")
+            return Response(
+                {'detail': 'Failed to fetch messages'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=['post'])
-    def send_message(self, request, pk=None):
+    def send_message(self, request, pk=None, tenant_slug=None):
         """
         Send a message to a channel.
         """
+        # The tenant_slug parameter is automatically passed from the URL
+        # but we don't need to use it here as the tenant context is already set
+        # by the TenantAwareAPIView
+        
         channel = self.get_object()
 
         # Validate input
@@ -128,31 +142,50 @@ class ChannelViewSet(TenantAwareAPIView,
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Send message using our service
-        message = send_message(
-            channel_id=channel.id,
-            user=request.user,
-            content=content,
-            content_type=request.data.get('content_type', 'text/plain'),
-            file_url=request.data.get('file_url')
-        )
+        try:
+            # Send message using our service
+            message = send_message(
+                channel_id=channel.id,
+                user=request.user,
+                content=content,
+                content_type=request.data.get('content_type', 'text/plain'),
+                file_url=request.data.get('file_url')
+            )
 
-        # Return the created message
-        serializer = ChatMessageSerializer(
-            message,
-            context={'request': request}
-        )
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+            # Return the created message
+            serializer = ChatMessageSerializer(
+                message,
+                context={'request': request}
+            )
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception("Error sending message")
+            return Response(
+                {'detail': 'Failed to send message'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=True, methods=['post'])
-    def mark_read(self, request, pk=None):
+    def mark_read(self, request, pk=None, tenant_slug=None):
         """
         Mark all messages in a channel as read.
         """
-        channel = self.get_object()
-        count = mark_messages_as_read(channel.id, request.user)
-        return Response({
-            'status': 'success',
-            'message': f'Marked {count} messages as read',
-            'channel_id': str(channel.id)
-        })
+        try:
+            channel = self.get_object()
+            count = mark_messages_as_read(channel.id, request.user)
+            return Response({
+                'status': 'success',
+                'message': f'Marked {count} messages as read',
+                'channel_id': str(channel.id)
+            })
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception("Error marking messages as read")
+            return Response(
+                {'detail': 'Failed to mark messages as read'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
