@@ -31,20 +31,15 @@ def handle_new_message(sender, instance, created, **kwargs):
         message_data = {
             'id': str(instance.id),
             'channel_id': str(instance.channel_id),
-            'sender_id': str(instance.sender_id),
+            'sender_id': str(instance.user.id),  # Use 'user' instead of 'sender_id'
             'content': instance.content,
-            'timestamp': instance.timestamp.isoformat(),
+            'timestamp': instance.created_at.isoformat(),  # Use 'created_at' instead of 'timestamp'
             'is_read': False,
-            'attachments': [
-                {
-                    'id': str(attachment.id),
-                    'file': attachment.file.url,
-                    'file_name': attachment.file_name,
-                    'file_size': attachment.file_size,
-                    'mime_type': attachment.mime_type
-                }
-                for attachment in instance.attachments.all()
-            ]
+            'attachments': [{
+                'file': instance.file_url,
+                'file_name': instance.file_url.split('/')[-1] if instance.file_url else '',
+                'mime_type': instance.content_type
+            }] if instance.file_url else []
         }
         
         # Notify channel participants
