@@ -9,17 +9,12 @@ from django.conf.urls.static import static
 
 # API URL patterns
 urlpatterns = [
-    # Admin site
-    path('admin/', admin.site.urls),
+   
+   path('admin/', admin.site.urls),
     
-    # API base URL
-    path('api/', include([
-        # Shared app (authentication, etc.)
-        path('', include('apps.shared.urls')),
-        
-        # Chat API
-        path('chat/', include('apps.chat.api.urls')),
-    ])),
+    path('api/', include('apps.shared.urls')),
+    
+    path('api/chat/', include(('apps.chat.api.urls', 'chat'), namespace='chat-api')),
 ]
 
 # Serve static and media files in development

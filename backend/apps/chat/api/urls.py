@@ -32,11 +32,11 @@ from rest_framework.routers import DefaultRouter
 from . import views
 
 # Create a router for our API endpoints
-router = DefaultRouter(trailing_slash=False)
+router = DefaultRouter()
 router.register(r'channels', views.ChannelViewSet, basename='channel')
 
 # The API URLs are now determined automatically by the router
-urlpatterns = [
+urlpatterns = [ 
     path('<slug:tenant_slug>/', include(router.urls)),
     path(
         '<slug:tenant_slug>/channels/<uuid:pk>/messages/',

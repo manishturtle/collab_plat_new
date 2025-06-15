@@ -9,5 +9,4 @@ app_name = 'shared'
 urlpatterns = [
     # Authentication
     path('<str:tenant_slug>/auth/login/', views.TenantLoginView.as_view(), name='tenant-login'),
-    path('api/chat/', include('apps.chat.api.urls')),
 ]
