@@ -189,3 +189,129 @@ class ChannelViewSet(TenantAwareAPIView,
                 {'detail': 'Failed to mark messages as read'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @action(detail=True, methods=['get'])
+    def centralized(self, request, pk=None, tenant_slug=None):
+        """
+        Centralized chat view that combines all channels for the user.
+        Returns a structured response with:
+        - Direct messages
+        - Group channels
+        - Contextual chats
+        - Unread counts
+        """
+        from ..models import ChatChannel, UserChannelState
+        from ..selectors import get_unread_message_count
+        
+        try:
+            # Get all channels where user is a participant
+            channels = ChatChannel.objects.filter(
+                participations__user=request.user
+            ).prefetch_related('participants', 'participations')
+            
+            # Get all user channel states for unread counts
+            channel_states = {
+                state.channel_id: state 
+                for state in UserChannelState.objects.filter(
+                    user=request.user,
+                    channel__in=channels
+                )
+            }
+            
+            # Categorize channels
+            direct_messages = []
+            group_channels = []
+            contextual_chats = []
+            
+            for channel in channels:
+                # Get unread count
+                unread_count = get_unread_message_count(channel.id, request.user)
+                
+                # Get last message preview
+                last_message = channel.messages.order_by('-created_at').first()
+                last_message_preview = None
+                if last_message:
+                    last_message_preview = {
+                        'id': str(last_message.id),
+                        'content': last_message.content[:100],
+                        'sender_id': last_message.user_id,
+                        'created_at': last_message.created_at,
+                        'is_own': last_message.user_id == request.user.id
+                    }
+                
+                # Get other participants for direct messages
+                other_participants = []
+                if channel.channel_type == 'direct':
+                    other_participants = [
+                        {
+                            'id': p.user.id,
+                            'username': p.user.username,
+                            'email': p.user.email,
+                            'avatar': p.user.avatar_url if hasattr(p.user, 'avatar_url') else None
+                        }
+                        for p in channel.participations.all() 
+                        if p.user_id != request.user.id
+                    ]
+                
+                channel_data = {
+                    'id': str(channel.id),
+                    'name': channel.name,
+                    'channel_type': channel.channel_type,
+                    'unread_count': unread_count,
+                    'last_message': last_message_preview,
+                    'created_at': channel.created_at,
+                    'updated_at': channel.updated_at,
+                    'participants': [
+                        {
+                            'id': p.user.id,
+                            'username': p.user.username,
+                            'email': p.user.email,
+                            'role': p.role,
+                            'is_online': False  # Will be implemented with presence
+                        }
+                        for p in channel.participations.all()
+                    ],
+                    'other_participants': other_participants,
+                    'context': {
+                        'host_application_id': channel.host_application_id,
+                        'object_type': channel.context_object_type,
+                        'object_id': channel.context_object_id
+                    } if channel.channel_type == 'contextual_object' else None
+                }
+                
+                # Categorize
+                if channel.channel_type == 'direct':
+                    direct_messages.append(channel_data)
+                elif channel.channel_type == 'group':
+                    group_channels.append(channel_data)
+                elif channel.channel_type == 'contextual_object':
+                    contextual_chats.append(channel_data)
+            
+            # Sort channels by last activity (most recent first)
+            def sort_key(c):
+                return c['last_message']['created_at'] if c['last_message'] else c['created_at']
+                
+            direct_messages.sort(key=sort_key, reverse=True)
+            group_channels.sort(key=sort_key, reverse=True)
+            contextual_chats.sort(key=sort_key, reverse=True)
+            
+            return Response({
+                'direct_messages': direct_messages,
+                'group_channels': group_channels,
+                'contextual_chats': contextual_chats,
+                'unread_counts': {
+                    'direct': sum(c['unread_count'] for c in direct_messages),
+                    'groups': sum(c['unread_count'] for c in group_channels),
+                    'contextual': sum(c['unread_count'] for c in contextual_chats),
+                    'total': sum(c['unread_count'] for c in direct_messages + group_channels + contextual_chats)
+                }
+            })
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception("Error in centralized chat view")
+            return Response(
+                {'detail': 'Failed to load chat data'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

@@ -53,4 +53,9 @@ urlpatterns = [
         views.ChannelViewSet.as_view({'post': 'mark_read'}),
         name='mark-read'
     ),
+    path(
+        '<slug:tenant_slug>/channels/<uuid:pk>/centralized/',
+        views.ChannelViewSet.as_view({'post': 'centralized'}),
+        name='centralized'
+    ),
 ]
