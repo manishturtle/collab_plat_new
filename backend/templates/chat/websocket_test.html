@@ -3,25 +3,90 @@
 <head>
     <title>WebSocket Test</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        #messages { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; margin-bottom: 10px; }
-        .log { margin: 5px 0; padding: 5px; border-radius: 3px; }
-        .success { background-color: #dff0d8; color: #3c763d; }
-        .error { background-color: #f2dede; color: #a94442; }
-        .info { background-color: #d9edf7; color: #31708f; }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #messages {
+            height: 300px;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            padding: 10px;
+            overflow-y: auto;
+        }
+        .log {
+            margin-bottom: 5px;
+        }
+        .error { color: red; }
+        .success { color: green; }
+        .info { color: blue; }
+        button {
+            margin-right: 10px;
+            padding: 8px 12px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        input[type="text"] {
+            padding: 8px;
+            width: 500px;
+            margin-right: 10px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #f9f9f9;
+        }
+        h2 {
+            margin-top: 0;
+        }
     </style>
 </head>
 <body>
     <h1>WebSocket Connection Test</h1>
+    
+    <div class="card">
+        <h2>Connection Settings</h2>
+        <div class="input-group">
+            <label for="token-input">JWT Token:</label><br>
+            <input type="text" id="token-input" placeholder="Paste your JWT token here">
+        </div>
+        <div class="input-group">
+            <label for="channel-input">Channel UUID:</label><br>
+            <input type="text" id="channel-input" value="fba1f391-1919-4cec-86e1-7f2c6671a0cc">
+        </div>
+        <div class="input-group">
+            <label for="port-input">WebSocket Port:</label><br>
+            <input type="text" id="port-input" value="8002" style="width: 100px;">
+        </div>
+        <button id="save-settings">Save Settings</button>
+    </div>
+    
     <div id="messages"></div>
-    <button id="connect">Connect</button>
+    <button id="connect">Connect WebSocket</button>
     <button id="disconnect" disabled>Disconnect</button>
+    <button id="send-message" disabled>Send Test Message</button>
 
     <script>
         const messages = document.getElementById('messages');
         const connectBtn = document.getElementById('connect');
         const disconnectBtn = document.getElementById('disconnect');
+        const sendMsgBtn = document.getElementById('send-message');
+        const tokenInput = document.getElementById('token-input');
+        const channelInput = document.getElementById('channel-input');
+        const portInput = document.getElementById('port-input');
+        const saveSettingsBtn = document.getElementById('save-settings');
+        
         let socket = null;
+        
+        // Load saved settings
+        tokenInput.value = localStorage.getItem('chat_token') || '';
+        channelInput.value = localStorage.getItem('channel_id') || 'fba1f391-1919-4cec-86e1-7f2c6671a0cc';
+        portInput.value = localStorage.getItem('ws_port') || '8002';
 
         function log(message, type = 'info') {
             const messageDiv = document.createElement('div');
@@ -30,25 +95,47 @@
             messages.appendChild(messageDiv);
             messages.scrollTop = messages.scrollHeight;
         }
-
-        connectBtn.addEventListener('click', () => {
-            log('Connecting to WebSocket...');
-            
-            // Get JWT token from localStorage or prompt the user
-            const token = localStorage.getItem('access_token') || 
-                         prompt('Please enter your JWT token:');
+        
+        // Save connection settings
+        saveSettingsBtn.addEventListener('click', () => {
+            const token = tokenInput.value.trim();
+            const channelId = channelInput.value.trim();
+            const port = portInput.value.trim();
             
             if (!token) {
-                log('No token provided. Please log in first.', 'error');
+                log('Please enter a valid JWT token', 'error');
                 return;
             }
             
-            // Store token for future use
-            localStorage.setItem('access_token', token);
+            localStorage.setItem('chat_token', token);
+            localStorage.setItem('channel_id', channelId);
+            localStorage.setItem('ws_port', port);
             
-            // Include token in WebSocket URL with valid channel ID
-            const channelId = 'fba1f391-1919-4cec-86e1-7f2c6671a0cc';
-            const wsUrl = `ws://localhost:8000/ws/chat/${channelId}/?token=${encodeURIComponent(token)}`;
+            log('Connection settings saved successfully', 'success');
+        });
+        
+        // Connect to WebSocket
+        connectBtn.addEventListener('click', () => {
+            if (socket && socket.readyState !== WebSocket.CLOSED) {
+                log('WebSocket is already connected or connecting', 'info');
+                return;
+            }
+            
+            log('Connecting to WebSocket...');
+            
+            // Get connection parameters from settings
+            const token = tokenInput.value.trim() || localStorage.getItem('chat_token');
+            const channelId = channelInput.value.trim() || localStorage.getItem('channel_id') || 'fba1f391-1919-4cec-86e1-7f2c6671a0cc';
+            const port = portInput.value.trim() || localStorage.getItem('ws_port') || '8002';
+            
+            if (!token) {
+                log('No token provided. Please enter a JWT token above.', 'error');
+                return;
+            }
+            
+            // Build WebSocket URL with parameters
+            const wsUrl = `ws://localhost:${port}/ws/chat/${channelId}/?token=${encodeURIComponent(token)}`;
+            log(`Connecting to: ${wsUrl}`, 'info');
             
             try {
                 socket = new WebSocket(wsUrl);
@@ -57,23 +144,23 @@
                     log('WebSocket connection established!', 'success');
                     connectBtn.disabled = true;
                     disconnectBtn.disabled = false;
-                    
-                    // Send a test message
-                    socket.send(JSON.stringify({
-                        'type': 'test.message',
-                        'message': 'Hello from client!',
-                        'token': token  // Include token in the message as well if needed
-                    }));
+                    sendMsgBtn.disabled = false;
                 };
                 
                 socket.onmessage = (e) => {
                     log(`Received: ${e.data}`, 'success');
                 };
                 
-                socket.onclose = () => {
-                    log('WebSocket connection closed', 'info');
+                socket.onclose = (e) => {
+                    if (e.code === 4000) {
+                        log(`WebSocket authentication failed: ${e.reason}`, 'error');
+                        log('Token may be expired. Try getting a new valid token.', 'info');
+                    } else {
+                        log(`WebSocket connection closed: ${e.code} ${e.reason || ''}`, 'error');
+                    }
                     connectBtn.disabled = false;
                     disconnectBtn.disabled = true;
+                    sendMsgBtn.disabled = true;
                 };
                 
                 socket.onerror = (error) => {
@@ -87,10 +174,35 @@
         
         disconnectBtn.addEventListener('click', () => {
             if (socket) {
-                log('Closing WebSocket connection...');
                 socket.close();
+                log('WebSocket disconnected', 'info');
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                sendMsgBtn.disabled = true;
             }
         });
+        
+        sendMsgBtn.addEventListener('click', () => {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                log('WebSocket is not connected', 'error');
+                return;
+            }
+            
+            try {
+                // Send a test message
+                socket.send(JSON.stringify({
+                    'type': 'test.message',
+                    'message': 'Hello from client!'
+                }));
+                
+                log('Test message sent', 'success');
+            } catch (error) {
+                log(`Error sending message: ${error.message}`, 'error');
+            }
+        });
+        
+        // Initialize button states
+        sendMsgBtn.disabled = true;
     </script>
 </body>
 </html>

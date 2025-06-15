@@ -116,6 +116,8 @@ class WebSocketJWTMiddleware:
     @database_sync_to_async
     def authenticate_token(self, token):
         """Validate JWT token and return user and tenant."""
+        # Define tenant_model outside try block to avoid UnboundLocalError
+        tenant_model = None
         try:
             access_token = AccessToken(token)
             user_id = access_token.get('user_id')
@@ -125,7 +127,7 @@ class WebSocketJWTMiddleware:
             if not all([user_id, tenant_id, schema_name]):
                 raise ValueError('Missing required token claims')
             
-            # Get tenant
+            # Get tenant model and instance
             tenant_model = get_tenant_model()
             tenant = tenant_model.objects.get(id=tenant_id, schema_name=schema_name)
             
@@ -137,11 +139,17 @@ class WebSocketJWTMiddleware:
                 
             return user, tenant
             
-        except (tenant_model.DoesNotExist, User.DoesNotExist) as e:
-            logger.error(f'User or tenant not found: {str(e)}')
+        except User.DoesNotExist as e:
+            logger.error(f'User not found: {str(e)}')
+            return None, None
+        except ValueError as e:
+            logger.error(f'Token validation error: {str(e)}')
             return None, None
         except Exception as e:
-            logger.error(f'Error in authenticate_token: {str(e)}', exc_info=True)
+            if tenant_model and hasattr(tenant_model, 'DoesNotExist') and isinstance(e, tenant_model.DoesNotExist):
+                logger.error(f'Tenant not found: {str(e)}')
+            else:
+                logger.error(f'Error in authenticate_token: {str(e)}', exc_info=True)
             return None, None
     
     @database_sync_to_async

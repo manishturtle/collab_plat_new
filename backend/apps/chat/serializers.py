@@ -8,7 +8,7 @@ User = get_user_model()
 
 class UserStatusSerializer(serializers.ModelSerializer):
     """Serializer for user status and presence information."""
-    id = serializers.UUIDField(source='public_id')
+    id = serializers.IntegerField(read_only=True)
     avatar_url = serializers.SerializerMethodField()
     last_seen = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S%z')
     
@@ -21,15 +21,27 @@ class UserStatusSerializer(serializers.ModelSerializer):
         read_only_fields = fields
     
     def get_avatar_url(self, obj):
-        """Get the avatar URL for the user."""
-        if obj.avatar and hasattr(obj.avatar, 'url'):
-            return self.context.get('request').build_absolute_uri(obj.avatar.url)
+        """Get the avatar URL for the user.
+        
+        Handles various field names that might store user avatars.
+        """
+        # Check common avatar field names
+        for field_name in ['avatar', 'profile_picture', 'photo', 'image']:
+            if hasattr(obj, field_name):
+                field_value = getattr(obj, field_name)
+                if field_value and hasattr(field_value, 'url'):
+                    request = self.context.get('request')
+                    if request:
+                        return request.build_absolute_uri(field_value.url)
+                    return field_value.url
+        
+        # Default placeholder
         return None
 
 
 class ChatChannelSerializer(serializers.ModelSerializer):
     """Serializer for chat channels."""
-    id = serializers.UUIDField(source='public_id', read_only=True)
+    id = serializers.UUIDField(read_only=True)
     is_private = serializers.BooleanField(read_only=True)
     unread_count = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
@@ -46,8 +58,9 @@ class ChatChannelSerializer(serializers.ModelSerializer):
     
     def get_unread_count(self, obj):
         """Get the number of unread messages for the current user."""
-        user = self.context.get('request').user if 'request' in self.context else None
-        if not user or not user.is_authenticated:
+        request = self.context.get('request')
+        user = request.user if request and hasattr(request, 'user') else None
+        if not user or not hasattr(user, 'is_authenticated') or not user.is_authenticated:
             return 0
             
         return obj.messages.exclude(
@@ -60,23 +73,26 @@ class ChatChannelSerializer(serializers.ModelSerializer):
         if not last_message:
             return None
             
+        request = self.context.get('request')
+        user = request.user if request and hasattr(request, 'user') else None
+        
         return {
             'id': str(last_message.id),
             'content': last_message.content,
             'content_type': last_message.content_type,
-            'user_id': str(last_message.user.public_id),
+            'user_id': str(last_message.user.id),  # Using id instead of public_id
             'username': last_message.user.username,
             'timestamp': last_message.created_at.isoformat(),
             'is_read': last_message.read_by.filter(
-                id=self.context.get('request').user.id
-            ).exists() if 'request' in self.context and self.context['request'].user.is_authenticated else False
+                id=user.id
+            ).exists() if user and hasattr(user, 'is_authenticated') and user.is_authenticated else False
         }
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
     """Serializer for chat messages."""
-    id = serializers.UUIDField(source='public_id')
-    user_id = serializers.UUIDField(source='user.public_id', read_only=True)
+    id = serializers.IntegerField(read_only=True)  # Using IntegerField since it's a BigAutoField in the model
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
     username = serializers.CharField(source='user.username', read_only=True)
     user_avatar = serializers.SerializerMethodField()
     timestamp = serializers.DateTimeField(source='created_at', read_only=True)
@@ -92,11 +108,24 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         read_only_fields = fields
     
     def get_user_avatar(self, obj):
-        """Get the avatar URL of the message sender."""
-        if obj.user.avatar and hasattr(obj.user.avatar, 'url'):
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.user.avatar.url)
+        """Get the avatar URL of the message sender.
+        
+        Handles various field names that might store user avatars.
+        """
+        if not obj.user:
+            return None
+            
+        # Check common avatar field names
+        for field_name in ['avatar', 'profile_picture', 'photo', 'image']:
+            if hasattr(obj.user, field_name):
+                field_value = getattr(obj.user, field_name)
+                if field_value and hasattr(field_value, 'url'):
+                    request = self.context.get('request')
+                    if request:
+                        return request.build_absolute_uri(field_value.url)
+                    return field_value.url
+        
+        # Default placeholder
         return None
     
     def get_is_own(self, obj):
@@ -108,12 +137,12 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     
     def get_read_by(self, obj):
         """Get list of user IDs who have read this message."""
-        return list(obj.read_by.values_list('public_id', flat=True))
+        return list(obj.read_by.values_list('id', flat=True))
 
 
 class MessageReadStatusSerializer(serializers.ModelSerializer):
     """Serializer for message read status."""
-    user_id = serializers.UUIDField(source='user.public_id')
+    user_id = serializers.IntegerField(source='user.id')
     username = serializers.CharField(source='user.username')
     read_at = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S%z')
     

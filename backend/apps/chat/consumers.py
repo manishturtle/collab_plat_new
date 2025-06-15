@@ -409,8 +409,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
         """Get channel information."""
         try:
             from .serializers import ChatChannelSerializer
+            from django.http import HttpRequest
             channel = ChatChannel.objects.get(id=self.channel_id)
-            return ChatChannelSerializer(channel, context={'request': None}).data
+            
+            # Create a mock request object with the user
+            mock_request = HttpRequest()
+            mock_request.user = self.user
+            
+            return ChatChannelSerializer(channel, context={'request': mock_request}).data
         except Exception as e:
             logger.error(f"Error getting channel info: {str(e)}", exc_info=True)
             return None
@@ -446,10 +452,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 )
             read_messages.append(message)
         
+        from django.http import HttpRequest
+        
+        # Create a mock request object with the user
+        mock_request = HttpRequest()
+        mock_request.user = self.user
+        
         return ChatMessageSerializer(
             read_messages,
             many=True,
-            context={'request': None}
+            context={'request': mock_request}
         ).data
     
     async def send_error(self, message):
