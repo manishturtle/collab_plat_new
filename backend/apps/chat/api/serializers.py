@@ -106,10 +106,28 @@ class ChatChannelSerializer(serializers.ModelSerializer):
     Serializer for chat channels.
     Includes participants and last message details.
     """
-    # Make context fields optional by setting required=False
-    host_application_id = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
-    context_object_type = serializers.CharField(max_length=100, required=False, allow_blank=True, allow_null=True)
-    context_object_id = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    # Context fields are optional and will be set based on channel_type
+    host_application_id = serializers.CharField(
+        max_length=100, 
+        required=False, 
+        allow_blank=True, 
+        allow_null=True,
+        default=None
+    )
+    context_object_type = serializers.CharField(
+        max_length=100, 
+        required=False, 
+        allow_blank=True, 
+        allow_null=True,
+        default=None
+    )
+    context_object_id = serializers.CharField(
+        max_length=255, 
+        required=False, 
+        allow_blank=True, 
+        allow_null=True,
+        default=None
+    )
     name = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
     
     participations = ChannelParticipantSerializer(many=True, read_only=True)
@@ -173,66 +191,86 @@ class ChatChannelSerializer(serializers.ModelSerializer):
         return get_unread_message_count(obj.id, request.user)
     
     def validate(self, data):
-        """Validate and pre-process channel data before creation."""
+        """
+        Validate and pre-process channel data before creation.
+        Sets default values for different channel types.
+        """
         channel_type = data.get('channel_type')
         participants = data.get('participants', [])
         request = self.context.get('request')
+        
+        if not channel_type:
+            raise serializers.ValidationError({
+                'detail': 'channel_type is required',
+                'code': 'missing_channel_type'
+            })
+        
+        # Convert empty strings to None for context fields
+        for field in ['host_application_id', 'context_object_type', 'context_object_id']:
+            if field in data and data[field] == '':
+                data[field] = None
         
         # Common validations based on channel type
         if channel_type == 'direct':
             # Direct chats have minimal requirements - just need one participant
             if len(participants) != 1:
                 raise serializers.ValidationError({
-                    'detail': 'Direct message must have exactly one participant (other than yourself)'
+                    'detail': 'Direct message must have exactly one participant (other than yourself)',
+                    'code': 'invalid_participant_count'
                 })
             
-            # ALWAYS set default values - this makes these fields optional for the API
-            # Set host_application_id
+            # Set default values for direct messages
             data['host_application_id'] = 'direct_chat'
-            
-            # Set context_object_type
             data['context_object_type'] = 'direct_message'
             
             # Generate a consistent ID for direct messages between the same users
-            # Extract the participant ID to ensure we're sorting integers, not objects
             participant_id = participants[0].id if hasattr(participants[0], 'id') else participants[0]
             user_ids = sorted([request.user.id, participant_id])
             data['context_object_id'] = f"direct_{user_ids[0]}_{user_ids[1]}"
             
-            # Set a default name
-            data['name'] = f"Direct Chat ({request.user.id} & {participant_id})"
+            # Set a default name if not provided
+            if not data.get('name'):
+                data['name'] = f"Direct Chat ({request.user.id} & {participant_id})"
             
-        # For group chats
         elif channel_type == 'group':
             # Group chats require a name
             if not data.get('name'):
                 raise serializers.ValidationError({
-                    'detail': 'Group name is required'
+                    'detail': 'Group name is required',
+                    'code': 'missing_group_name'
                 })
                 
-            # Apply defaults for context fields if not provided
-            if 'host_application_id' not in data or not data['host_application_id']:
-                data['host_application_id'] = 'group_chat'
-                
-            if 'context_object_type' not in data or not data['context_object_type']:
-                data['context_object_type'] = 'group'
-                
-            if 'context_object_id' not in data or not data['context_object_id']:
-                data['context_object_id'] = f"group_{request.user.id}_{data['name'].replace(' ', '_')}"
+            # Set default values for group chats
+            data['host_application_id'] = data.get('host_application_id') or 'group_chat'
+            data['context_object_type'] = data.get('context_object_type') or 'group'
+            
+            # Generate a context_object_id if not provided
+            if not data.get('context_object_id'):
+                data['context_object_id'] = f"group_{request.user.id}_{data['name'].lower().replace(' ', '_')}"
         
-        # For contextual chats
         elif channel_type == 'contextual_object':
             # Contextual chats require specific fields
-            required_fields = ['host_application_id', 'context_object_type', 'context_object_id', 'name']
+            required_fields = ['host_application_id', 'context_object_type', 'context_object_id']
             missing = [field for field in required_fields if not data.get(field)]
             if missing:
                 raise serializers.ValidationError({
-                    'detail': f'Missing required fields for contextual chat: {", ".join(missing)}'
+                    'detail': f'Missing required fields for contextual chat: {", ".join(missing)}',
+                    'code': 'missing_required_fields',
+                    'fields': missing
+                })
+                
+            # Name is required for contextual objects
+            if not data.get('name'):
+                raise serializers.ValidationError({
+                    'detail': 'Name is required for contextual chat',
+                    'code': 'missing_name'
                 })
         
         else:
             raise serializers.ValidationError({
-                'detail': f'Invalid channel_type: {channel_type}. Must be one of: direct, group, contextual_object'
+                'detail': f'Invalid channel_type: {channel_type}. Must be one of: direct, group, contextual_object',
+                'code': 'invalid_channel_type',
+                'allowed_types': ['direct', 'group', 'contextual_object']
             })
         
         return data
@@ -241,17 +279,88 @@ class ChatChannelSerializer(serializers.ModelSerializer):
         participants = validated_data.pop('participants', [])
         request = self.context.get('request')
         
-        # Create the channel - ensure we're using IDs not user objects
-        channel = ChatChannel.objects.create(
-            **validated_data,
-            created_by=request.user.id,
-            updated_by=request.user.id
-        )
+        # For direct messages, check if a channel already exists between these users
+        if validated_data.get('channel_type') == 'direct' and participants:
+            try:
+                # Get the participant ID (already validated in the validate method)
+                participant_id = participants[0].id if hasattr(participants[0], 'id') else participants[0]
+                
+                # Look for an existing direct message channel between these users
+                existing_channel = ChatChannel.objects.filter(
+                    channel_type='direct',
+                    host_application_id='direct_chat',
+                    context_object_type='direct_message',
+                    context_object_id=validated_data['context_object_id']
+                ).first()
+                
+                if existing_channel:
+                    # Ensure the current user is a participant
+                    if not ChannelParticipant.objects.filter(
+                        channel=existing_channel,
+                        user_id=request.user.id
+                    ).exists():
+                        self._add_participants(existing_channel, [request.user.id], request.user)
+                    
+                    # Ensure the other participant is still a participant
+                    if not ChannelParticipant.objects.filter(
+                        channel=existing_channel,
+                        user_id=participant_id
+                    ).exists():
+                        self._add_participants(existing_channel, [participant_id], request.user)
+                    
+                    return existing_channel
+                    
+            except Exception as e:
+                logger.warning(f"Error checking for existing direct message channel: {str(e)}")
         
-        # Add participants
-        self._add_participants(channel, participants, request.user)
-        
-        return channel
+        # If we get here, either it's not a direct message or no existing channel was found
+        try:
+            # Create the channel - ensure we're using IDs not user objects
+            channel = ChatChannel.objects.create(
+                **validated_data,
+                created_by=request.user.id,
+                updated_by=request.user.id
+            )
+            
+            # Add participants
+            self._add_participants(channel, participants, request.user)
+            
+            return channel
+            
+        except Exception as e:
+            # Handle unique constraint violation
+            if 'unique_contextual_chat' in str(e):
+                # Try to find the existing channel
+                existing = ChatChannel.objects.filter(
+                    host_application_id=validated_data.get('host_application_id'),
+                    context_object_type=validated_data.get('context_object_type'),
+                    context_object_id=validated_data.get('context_object_id')
+                ).first()
+                
+                if existing:
+                    # Ensure the current user is a participant
+                    if not ChannelParticipant.objects.filter(
+                        channel=existing,
+                        user_id=request.user.id
+                    ).exists():
+                        self._add_participants(existing, [request.user.id], request.user)
+                    
+                    # Ensure other participants are added
+                    for participant in participants:
+                        participant_id = participant.id if hasattr(participant, 'id') else participant
+                        if not ChannelParticipant.objects.filter(
+                            channel=existing,
+                            user_id=participant_id
+                        ).exists():
+                            self._add_participants(existing, [participant_id], request.user)
+                    
+                    return existing
+            
+            # Re-raise the exception if we couldn't handle it
+            raise serializers.ValidationError({
+                'detail': 'A chat with these parameters already exists',
+                'code': 'channel_exists'
+            })
 
     def _add_participants(self, channel, participant_ids, current_user):
         """Helper method to add participants to a channel"""
