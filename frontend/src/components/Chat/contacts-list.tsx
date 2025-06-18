@@ -137,15 +137,15 @@ console.log('ContactsList - users:', users);
         </Box>
 
         <Box sx={{ 
-          overflowY: 'auto', 
-          height: 'calc(100vh - 200px)', 
-          display: 'flex', 
-          flexDirection: 'column',
+          p: 2, 
+          flex: 1, 
+          overflowY: 'auto',
+          maxHeight: 'calc(100vh - 200px)', // Adjust based on your header/footer height
           '&::-webkit-scrollbar': {
-            width: '4px',
+            width: '6px',
           },
           '&::-webkit-scrollbar-track': {
-            background: 'transparent'
+            background: 'transparent',
           },
           '&::-webkit-scrollbar-thumb': {
             background: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
@@ -191,7 +191,8 @@ console.log('ContactsList - users:', users);
                 {t('Groups')}
               </Typography>
             </Box>
-            <IconButton 
+            
+            {/* <IconButton 
               size="small" 
               sx={{ 
                 bgcolor: (theme) => theme.palette.mode === 'dark' ? 'grey.800' : 'grey.200',
@@ -204,7 +205,7 @@ console.log('ContactsList - users:', users);
               aria-label={t('Create new channel')}
             >
               <AddIcon fontSize="small" />
-            </IconButton>
+            </IconButton> */}
           </Box>
 
           {filteredChannels.map(channel => (
