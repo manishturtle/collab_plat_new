@@ -270,7 +270,7 @@ const Chat = () => {
   return (
     <Box sx={{ 
       display: 'flex', 
-      height: 'calc(100vh - 64px)', // Subtract header height if there's a global header
+      height: 'calc(100vh - 65px)', // Subtract header height if there's a global header
       maxHeight: '100vh', 
       overflow: 'hidden', // Prevent whole page scrolling
       position: 'relative', // For absolute positioning of children if needed

@@ -27,7 +27,6 @@ export default function DashboardLayout({
         <main style={{
           flexGrow: 1,
           overflow: 'auto',
-          padding: '20px'
         }}>
           {children}
         </main>
