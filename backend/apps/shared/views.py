@@ -8,11 +8,63 @@ from django.http import JsonResponse
 
 logger = logging.getLogger(__name__)
 from rest_framework.views import APIView
-from rest_framework import status
+from rest_framework import status, permissions
 from rest_framework_simplejwt.tokens import RefreshToken
 from django_tenants.utils import schema_context, get_tenant_model, get_tenant_domain_model
 from django.apps import apps
 from .models import Tenant, Domain, TenantUserModel as UserModel
+from rest_framework.response import Response
+from django.db.models import Q
+
+
+class TenantUsersForChatView(APIView):
+    """
+    API endpoint that returns all users in the current tenant for chat purposes.
+    URL: /api/<tenant_slug>/chat/users/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, tenant_slug):
+        """
+        Return a list of all users in the current tenant.
+        Excludes the current user from the results.
+        """
+        try:
+            # Get the current user
+            current_user = request.user
+            
+            # Get all users in the current tenant except the current user
+            users = UserModel.objects.filter(
+                is_active=True
+            ).exclude(
+                id=current_user.id
+            ).values(
+                'id',
+                'email',
+                'first_name',
+                'last_name',
+                'is_online',
+                'last_seen',
+                'status',
+                'status_emoji',
+                'avatar_url'
+            ).order_by('first_name', 'last_name')
+            
+            # Convert QuerySet to list for JSON serialization
+            users_list = list(users)
+            
+            return Response({
+                'success': True,
+                'users': users_list,
+                'count': len(users_list)
+            })
+            
+        except Exception as e:
+            logger.error(f"Error fetching users for chat: {str(e)}")
+            return Response(
+                {'error': 'Failed to fetch users', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 # Get the tenant model from settings
 def get_tenant_model():

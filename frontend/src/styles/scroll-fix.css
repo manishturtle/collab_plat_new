@@ -1,0 +1,31 @@
+/* Custom CSS to fix scrolling issues */
+.messages-scrollable-area {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
+.messages-scrollable-area.scrollable::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 12px;
+  background: rgba(148, 163, 184, 0.1);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.messages-scrollable-area.scrollable:hover::after {
+  opacity: 1;
+}
+
+/* Enable momentum scrolling on iOS */
+@supports (-webkit-touch-callout: none) {
+  .messages-scrollable-area {
+    height: -webkit-fill-available;
+  }
+}

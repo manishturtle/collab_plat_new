@@ -122,7 +122,7 @@ class TenantUserModel(AbstractBaseUser, PermissionsMixin, BaseTenantModel):
     last_seen = models.DateTimeField(null=True, blank=True, db_index=True)
     
     # User status
-    status = models.CharField(max_length=50, blank=True, null=True, help_text="User's custom status message")
+    status = models.CharField(max_length=10, blank=True, null=True, help_text="User's custom status message")
     status_emoji = models.CharField(max_length=10, blank=True, null=True, help_text="Emoji representing user's status")
     
     # User preferences

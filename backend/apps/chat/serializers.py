@@ -89,6 +89,18 @@ class ChatChannelSerializer(serializers.ModelSerializer):
         }
 
 
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer for user information in messages."""
+    full_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'first_name', 'last_name', 'full_name', 'username', 'is_online']
+    
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip() if obj else ''
+
+
 class ChatMessageSerializer(serializers.ModelSerializer):
     """Serializer for chat messages."""
     id = serializers.IntegerField(read_only=True)  # Using IntegerField since it's a BigAutoField in the model
@@ -98,12 +110,14 @@ class ChatMessageSerializer(serializers.ModelSerializer):
     timestamp = serializers.DateTimeField(source='created_at', read_only=True)
     is_own = serializers.SerializerMethodField()
     read_by = serializers.SerializerMethodField()
+    # Add complete user data that matches the WebSocket format
+    user = UserSerializer(source='user', read_only=True)
     
     class Meta:
         model = ChatMessage
         fields = [
             'id', 'content', 'content_type', 'user_id', 'username', 'user_avatar',
-            'timestamp', 'is_own', 'read_by', 'updated_at'
+            'timestamp', 'is_own', 'read_by', 'updated_at', 'user'
         ]
         read_only_fields = fields
     
@@ -148,7 +162,7 @@ class MessageReadStatusSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = MessageReadStatus
-        fields = ['user_id', 'username', 'is_read', 'read_at']
+        fields = ['user_id', 'username', 'read_at']
         read_only_fields = fields
 
 

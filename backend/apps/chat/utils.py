@@ -55,11 +55,22 @@ async def notify_new_message(channel_id: str, message_data: Dict[str, Any]) -> N
     group_name = get_channel_group_name(channel_id, 'chat')
     
     try:
+        # Ensure we log exactly what we're sending through the channel layer
+        logger.info(f"Sending to channel layer: {message_data}")
+        
+        # Make sure to include essential user info in the message directly
+        # to prevent it from being lost in the channel layer transport
         await channel_layer.group_send(
             group_name,
             {
                 'type': 'chat.message',
-                'message': message_data
+                'message': message_data,
+                # Include critical fields at top level to ensure they reach the client
+                'user_id': message_data.get('user_id'),
+                'sender_id': message_data.get('sender_id'),
+                'sender_name': message_data.get('full_name', ''),
+                'first_name': message_data.get('first_name', ''),
+                'last_name': message_data.get('last_name', '')
             }
         )
     except Exception as e:

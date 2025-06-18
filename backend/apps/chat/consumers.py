@@ -238,6 +238,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_typing(data.get('is_typing', False))
             elif message_type == 'message.read':
                 await self.handle_message_read(data.get('message_id'))
+            elif message_type == 'heartbeat':
+                # Simply respond with a heartbeat acknowledgement
+                await self.safe_send({
+                    'type': 'heartbeat.ack',
+                    'timestamp': timezone.now().isoformat()
+                })
             else:
                 logger.warning(f'Unknown message type: {message_type}')
                 
@@ -256,17 +262,38 @@ class ChatConsumer(AsyncWebsocketConsumer):
         # Save message to database
         message = await self.save_message(content, self.user)
         
-        # Prepare message data
+        # Get user data for including in the message
+        user_data = await self.get_user_data(self.user)
+        
+        # Prepare message data with explicitly included user information
         message_data = {
             'id': str(message.id),
             'content': message.content,
             'content_type': message.content_type,
+            'sender_id': str(self.user.id),
             'user_id': str(self.user.id),
             'username': self.user.username,
+            'first_name': self.user.first_name,  # Include first name directly
+            'last_name': self.user.last_name,    # Include last name directly
+            'full_name': f"{self.user.first_name} {self.user.last_name}".strip(),  # Include full name
             'timestamp': message.created_at.isoformat(),
-            'is_own': True,
-            'read_by': []
+            'is_read': False,
+            'read_by': [],
+            'attachments': [],
+            # Include full user data object in standard format
+            'user': {
+                'id': self.user.id,
+                'email': self.user.email,
+                'first_name': self.user.first_name,
+                'last_name': self.user.last_name,
+                'full_name': f"{self.user.first_name} {self.user.last_name}".strip(),
+                'username': self.user.username,
+                'is_online': getattr(self.user, 'is_online', False)
+            }
         }
+        
+        # Log the message data to confirm structure
+        logger.info(f"Sending message with user data: {user_data}")
         
         # Notify all channel participants
         await notify_new_message(
@@ -301,10 +328,71 @@ class ChatConsumer(AsyncWebsocketConsumer):
     # Message handlers for group events
     async def chat_message(self, event):
         """Handle chat message from group."""
-        await self.safe_send({
+        # Extract message and any additional data from the event
+        message = event['message']
+        
+        # Log the incoming event structure for debugging
+        logger.info(f"Received event to broadcast: {event}")
+        
+        # Get sender information from the message or event
+        sender_id = message.get('sender_id') or message.get('user_id') or event.get('sender_id') or event.get('user_id')
+        first_name = event.get('first_name') or message.get('first_name', '')
+        last_name = event.get('last_name') or message.get('last_name', '')
+        full_name = event.get('sender_name') or message.get('full_name', '')
+        
+        # CRITICAL: Check if this message was sent by the current user
+        # If so, don't send it back to avoid duplication
+        if sender_id and str(sender_id) == str(self.user.id):
+            logger.info(f"Skipping echo of own message to avoid duplicate: {sender_id} == {self.user.id}")
+            return
+        
+        # Make sure the message includes sender information
+        if first_name and 'first_name' not in message:
+            message['first_name'] = first_name
+            
+        if last_name and 'last_name' not in message:
+            message['last_name'] = last_name
+            
+        if full_name and 'full_name' not in message:
+            message['full_name'] = full_name
+        
+        # If not populated yet, try to get the full user data
+        if 'user' not in message and sender_id:
+            try:
+                # Get user from database
+                user_obj = await self.get_user_by_id(sender_id)
+                if user_obj:
+                    # Create complete user data
+                    user_data = await self.get_user_data(user_obj)
+                    message['user'] = user_data
+                    logger.info(f"Added user data to message: {user_data}")
+                    
+                    # Also add basic fields at top level for compatibility
+                    if not message.get('first_name'):
+                        message['first_name'] = user_obj.first_name
+                    if not message.get('last_name'):
+                        message['last_name'] = user_obj.last_name
+                    if not message.get('full_name'):
+                        message['full_name'] = f"{user_obj.first_name} {user_obj.last_name}".strip()
+                    if not message.get('username'):
+                        message['username'] = user_obj.username
+            except Exception as e:
+                logger.error(f"Error adding user data to message: {str(e)}")
+        
+        # Set is_own flag for the receiver
+        message['is_own'] = False  # Since we're skipping echo, this is always false
+        
+        # Create complete message with proper format
+        websocket_message = {
             'type': 'chat.message',
-            'message': event['message']
-        })
+            'message': message
+        }
+        
+        # Log what we're sending to client
+        logger.info(f"Sending to client: {websocket_message}")
+        
+        # Send the enhanced message
+        await self.safe_send(websocket_message)
     
     async def typing_update(self, event):
         """Handle typing update from group."""
@@ -370,11 +458,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
             
             # Create or update read status
+            # Note: MessageReadStatus doesn't have an is_read field, so we only set read_at
             _, created = MessageReadStatus.objects.update_or_create(
                 message=message,
                 user=self.user,
                 defaults={
-                    'is_read': True,
                     'read_at': timezone.now()
                 }
             )
@@ -389,6 +477,43 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not is_online:
             self.user.last_seen = timezone.now()
         self.user.save(update_fields=['is_online', 'last_seen'])
+        
+    @database_sync_to_async
+    def get_user_by_id(self, user_id):
+        """Get a user by their ID.
+        
+        Args:
+            user_id: The user ID to lookup
+            
+        Returns:
+            User object if found, None otherwise
+        """
+        User = get_user_model()
+        try:
+            return User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return None
+    
+    @database_sync_to_async
+    def get_user_data(self, user):
+        """Get full user data for inclusion in message payload.
+        
+        This matches the structure returned by the REST API.
+        
+        Args:
+            user: The user object to serialize
+            
+        Returns:
+            dict: Dictionary with user information
+        """
+        return {
+            'id': user.id,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'full_name': f"{user.first_name} {user.last_name}".strip(),
+            'is_online': getattr(user, 'is_online', False),
+        }
     
     async def send_channel_info(self):
         """Send channel information to the client."""
@@ -420,7 +545,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error getting channel info: {str(e)}", exc_info=True)
             return None
-    
+        
     async def send_recent_messages(self, limit=50):
         """Send recent messages to the client."""
         try:
@@ -432,7 +557,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 })
         except Exception as e:
             logger.error(f"Error sending recent messages: {str(e)}", exc_info=True)
-    
+        
     @database_sync_to_async
     def get_recent_messages(self, limit):
         """Get recent messages for the channel."""
@@ -445,10 +570,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
         read_messages = []
         for message in messages:
             if message.user_id != self.user.id:
+                # Note: MessageReadStatus doesn't have an is_read field
                 MessageReadStatus.objects.get_or_create(
                     message=message,
                     user=self.user,
-                    defaults={'is_read': True, 'read_at': timezone.now()}
+                    defaults={'read_at': timezone.now()}
                 )
             read_messages.append(message)
         
@@ -583,10 +709,18 @@ class PresenceConsumer(AsyncWebsocketConsumer):
         update_fields = []
         
         if status is not None and status != self.user.status:
+            # Truncate status to match database field length constraint
+            if status and len(status) > 10:
+                status = status[:10]
+                logger.warning(f"Status message truncated to 10 characters for user {self.user_id}")
             self.user.status = status
             update_fields.append('status')
             
         if status_emoji is not None and status_emoji != self.user.status_emoji:
+            # Ensure emoji fits within the field limit
+            if status_emoji and len(status_emoji) > 10:
+                status_emoji = status_emoji[:10]
+                logger.warning(f"Status emoji truncated to 10 characters for user {self.user_id}")
             self.user.status_emoji = status_emoji
             update_fields.append('status_emoji')
         
