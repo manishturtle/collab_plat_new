@@ -1,6 +1,8 @@
 'use client';
 
+import React from 'react';
 import { Box, Typography, Avatar, Badge } from '@mui/material';
+import { styled } from '@mui/material/styles';
 
 interface ContactItemProps {
   id: string | number;
@@ -9,7 +11,7 @@ interface ContactItemProps {
   isSelected?: boolean;
   isOnline?: boolean;
   unreadCount?: number;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
 }
 
 /**
@@ -31,7 +33,10 @@ const ContactItem: React.FC<ContactItemProps> = ({
 }) => {
   return (
     <Box
-      onClick={onClick}
+      onClick={(e: React.MouseEvent) => {
+        e.preventDefault();
+        onClick(e);
+      }}
       sx={{
         display: 'flex',
         alignItems: 'center',
@@ -43,7 +48,7 @@ const ContactItem: React.FC<ContactItemProps> = ({
         transition: 'all 0.2s ease',
         bgcolor: isSelected ? (theme) => theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)' : 'transparent',
         '&:hover': {
-          bgcolor: (theme) => !isSelected && (theme.palette.mode === 'dark' ? 'action.hover' : 'rgba(0, 0, 0, 0.04)'),
+          bgcolor: (theme) => isSelected ? undefined : (theme.palette.mode === 'dark' ? 'action.hover' : 'rgba(0, 0, 0, 0.04)'),
         },
         ...(isSelected && {
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08)',

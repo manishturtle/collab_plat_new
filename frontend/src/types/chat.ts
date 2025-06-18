@@ -83,6 +83,7 @@ export interface Channel {
   updated_by: number;
   company_id: number;
   client_id: number;
+  avatar?: string; // Optional avatar URL for the channel
 }
 export interface ChatState {
   channels: Channel[];

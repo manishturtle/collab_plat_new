@@ -319,12 +319,29 @@ CORS_ALLOW_CREDENTIALS = True
 
 # Django Channels and WebSocket Configuration
 ASGI_APPLICATION = 'config.asgi.application'
+# CHANNEL_LAYERS = {
+#     'default': {
+#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
+#         'CONFIG': {
+#             "hosts": [('127.0.0.1', 6379)],
+#             "symmetric_encryption_keys": [SECRET_KEY],
+#         },
+#     },
+# }
+
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
             "hosts": [('127.0.0.1', 6379)],
             "symmetric_encryption_keys": [SECRET_KEY],
+            "channel_capacity": {
+                "http.request": 1000,
+                "http.response!*": 1000,
+                "websocket.send*": 1000,
+            },
+            "capacity": 10000,
+            #  "password": "guest",  # Add this line if needed
         },
     },
 }

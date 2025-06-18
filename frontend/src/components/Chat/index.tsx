@@ -62,6 +62,7 @@ const Chat = () => {
     startNewChat,
     isLoading: isChatLoading,
     error,
+    currentUser,
   } = useChat();
 
   // Debug logging
@@ -197,48 +198,50 @@ const Chat = () => {
   }, []);
 
   // Handle chat selection
-  const handleSelect = (id: string | number, type: 'channel' | 'user') => {
-    setSelectedId(id);
-    setSelectedType(type);
+  const handleSelect = (id: string | number, type: 'channel' | 'user', e?: React.MouseEvent) => {
+    // Prevent default to avoid any form submission or link following
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     
     console.log(`Selected ${type} with id ${id}`);
     
-    // Call API to load channel or user data
-    if (type === 'channel') {
-      selectChannel(id.toString());
-    } else if (type === 'user') {
-      // For direct messages, we need to either find the existing DM channel or create a new one
-      const existingDM = channels.find(c => 
-        c.channel_type === 'direct' && 
-        c.participants?.some(p => p.id === id)
-      );
-      
-      if (existingDM) {
-        selectChannel(existingDM.id.toString());
-      } else {
-        // Create a new DM channel with this user
-        console.log(`Creating new DM with user ${id}`);
-        startNewChat([id]).then(channel => {
+    // If it's a user, start a direct message chat
+    if (type === 'user') {
+      startNewChat([id])
+        .then(channel => {
           if (channel) {
-            console.log('Created new DM channel:', channel);
-            selectChannel(channel.id.toString());
+            console.log('Started new chat with user:', id, 'Channel:', channel);
+            setSelectedId(channel.id);
+            setSelectedType('channel');
           }
-        }).catch(error => {
-          console.error('Failed to create DM channel:', error);
+        })
+        .catch(error => {
+          console.error('Error starting new chat:', error);
         });
-      }
+    } else {
+      // For channels, just select the channel
+      selectChannel(id.toString())
+        .then(() => {
+          setSelectedId(id);
+          setSelectedType('channel');
+        })
+        .catch(error => {
+          console.error('Error selecting channel:', error);
+        });
     }
   };
   
   // Handle sending a message
   const handleSendMessage = async (content: string) => {
-    if (!content.trim()) {
-      return; // Don't send empty messages
+    if (!content.trim() || !selectedId) {
+      return; // Don't send empty messages or if no user/channel is selected
     }
     
-    if (selectedType === 'user' && !currentChannel) {
-      // For direct messaging to a user without an existing channel
-      try {
+    try {
+      if (selectedType === 'user') {
+        // For direct messaging to a user
         console.log(`Creating a direct message channel with user ${selectedId}`);
         const newChannel = await startNewChat([selectedId]);
         if (newChannel) {
@@ -248,14 +251,14 @@ const Chat = () => {
             sendMessage(content);
           }, 300);
         }
-      } catch (error) {
-        console.error('Failed to create direct message channel:', error);
+      } else if (currentChannel) {
+        // For existing channels
+        sendMessage(content);
+      } else {
+        console.error('Cannot send message: No channel selected');
       }
-    } else if (currentChannel) {
-      // For existing channels or after channel created
-      sendMessage(content);
-    } else {
-      console.error('Cannot send message: No channel selected');
+    } catch (error) {
+      console.error('Failed to send message:', error);
     }
   };
 
@@ -312,16 +315,40 @@ const Chat = () => {
             <ChatHeader
               name={
                 selectedType === 'channel'
-                  ? channels.find(c => c.id === selectedId)?.name || 'Channel'
+                  ? (() => {
+                      // Get the selected channel
+                      const selectedChannel = channels.find(c => c.id === selectedId);
+                      
+                      // For all channels, just display the channel name
+                      return selectedChannel?.name || 'Channel';
+                    })()
                   : (() => {
+                      // For users, always display the selected user's name
                       const user = users.find(u => u.id === selectedId);
                       return user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'User';
                     })()
               }
               avatar={
                 selectedType === 'user'
-                  ? users.find(u => u.id === selectedId)?.avatar_url || ''
-                  : channels.find(c => c.id === selectedId)?.avatar_url || ''
+                  ? users.find(u => u.id === selectedId)?.avatar_url || '/images/avatars/avatar-default.png'
+                  : (() => {
+                      // For channels, check if it's a direct message to use the other user's avatar
+                      const selectedChannel = channels.find(c => c.id === selectedId);
+                      if (selectedChannel?.channel_type === 'direct') {
+                        // Make sure we're comparing the same type (string to string)
+                        const currentUserId = String(currentUser?.id);
+                        
+                        // Find the other participant by excluding the current user
+                        const otherParticipation = selectedChannel.participations?.find(p => 
+                          p.user && String(p.user.id) !== currentUserId
+                        );
+                        
+                        if (otherParticipation?.user?.avatar_url) {
+                          return otherParticipation.user.avatar_url;
+                        }
+                      }
+                      return '/images/avatars/group-avatar.png'; // Default group avatar
+                    })()
               }
               memberCount={
                 selectedType === 'channel'

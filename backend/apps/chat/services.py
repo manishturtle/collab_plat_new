@@ -1,4 +1,5 @@
 from typing import List, Optional, Dict, Any
+import uuid
 from django.db import transaction
 from django.utils import timezone
 from django.conf import settings
@@ -7,10 +8,8 @@ from .models import ChatChannel, ChannelParticipant, ChatMessage, MessageReadSta
 from .selectors import get_channel_by_id
 
 @transaction.atomic
-# apps/chat/services.py
-
 def create_channel(channel_type, participants, name=None, host_application_id=None,
-                  context_object_type=None, context_object_id=None, created_by=None):
+                 context_object_type=None, context_object_id=None, created_by=None):
     """
     Service function to create different types of channels
     
@@ -24,9 +23,10 @@ def create_channel(channel_type, participants, name=None, host_application_id=No
         created_by (User): User creating the channel
     
     Returns:
-        ChatChannel: The created channel
+        ChatChannel: The created or existing channel
     """
     from .models import ChatChannel, ChannelParticipant
+    
     # Validate input
     if not created_by:
         raise ValueError("created_by user is required")
@@ -34,11 +34,25 @@ def create_channel(channel_type, participants, name=None, host_application_id=No
     if channel_type not in [t[0] for t in ChatChannel.ChannelType.choices]:
         raise ValueError(f"Invalid channel_type. Must be one of: {[t[0] for t in ChatChannel.ChannelType.choices]}")
     
-    if channel_type in ['group', 'contextual_object'] and not name:
-        raise ValueError("Name is required for group and contextual channels")
+    if channel_type == 'direct':
+        if len(participants) != 1:
+            raise ValueError("Direct messages must have exactly one participant")
+        
+        # For direct messages, check if a channel already exists between these users
+        other_user_id = participants[0]
+        existing_channel = _get_existing_dm_channel(created_by.id, other_user_id)
+        if existing_channel:
+            return existing_channel
+            
+        # Get the other user for naming the channel
+        try:
+            other_user = User.objects.get(id=other_user_id)
+            name = f"{other_user.get_full_name() or other_user.email}"
+        except User.DoesNotExist:
+            name = "Direct Message"
     
-    if channel_type == 'direct' and len(participants) != 1:
-        raise ValueError("Direct messages must have exactly one participant")
+    elif channel_type in ['group', 'contextual_object'] and not name:
+        raise ValueError("Name is required for group and contextual channels")
     
     # Create the channel
     channel = ChatChannel.objects.create(
@@ -51,22 +65,51 @@ def create_channel(channel_type, participants, name=None, host_application_id=No
         updated_by=created_by.id
     )
     
-    # Add participants
-    for user_id in participants:
+    # Add participants - for direct messages, include both users
+    participant_ids = [created_by.id] + participants if channel_type == 'direct' else participants
+    
+    for user_id in participant_ids:
         try:
             user = User.objects.get(id=user_id)
-            print("kkk:", user)
-            ChannelParticipant.objects.create(
+            ChannelParticipant.objects.get_or_create(
                 channel=channel,
                 user=user,
-                role=ChannelParticipant.Role.ADMIN if user == created_by else ChannelParticipant.Role.MEMBER,
-                created_by=created_by.id,
-                updated_by=created_by.id
+                defaults={
+                    'role': ChannelParticipant.Role.ADMIN if user == created_by else ChannelParticipant.Role.MEMBER,
+                    'created_by': created_by.id,
+                    'updated_by': created_by.id
+                }
             )
         except User.DoesNotExist:
             continue
     
     return channel
+
+def _get_existing_dm_channel(user1_id, user2_id):
+    """
+    Check if a direct message channel already exists between two users.
+    """
+    from .models import ChatChannel, ChannelParticipant
+    
+    # Get all direct message channels where both users are participants
+    user1_channels = set(ChannelParticipant.objects.filter(
+        user_id=user1_id,
+        channel__channel_type='direct'
+    ).values_list('channel_id', flat=True))
+    
+    user2_channels = set(ChannelParticipant.objects.filter(
+        user_id=user2_id,
+        channel__channel_type='direct'
+    ).values_list('channel_id', flat=True))
+    
+    # Find common channels (channels where both users are participants)
+    common_channel_ids = user1_channels.intersection(user2_channels)
+    
+    if common_channel_ids:
+        # Return the first common channel
+        return ChatChannel.objects.get(id=next(iter(common_channel_ids)))
+    
+    return None
     
 @transaction.atomic
 def send_message(

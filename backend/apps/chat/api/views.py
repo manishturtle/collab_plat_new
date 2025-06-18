@@ -28,6 +28,49 @@ class ChannelViewSet(TenantAwareAPIView,
 
     serializer_class = ChatChannelSerializer
     lookup_field = 'pk'
+    
+    @action(detail=False, methods=['post'])
+    def start_direct_message(self, request, *args, **kwargs):
+        """
+        Start or retrieve a direct message channel with another user.
+        """
+        from ..models import ChatChannel, ChannelParticipant
+        from ..services import create_channel
+        
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response(
+                {'detail': 'user_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Ensure the target user exists
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            target_user = User.objects.get(id=user_id)
+            
+            # Create or get the direct message channel
+            channel = create_channel(
+                channel_type='direct',
+                participants=[target_user.id],
+                created_by=request.user
+            )
+            
+            # Serialize the channel with its participants
+            serializer = self.get_serializer(channel)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            return Response(
+                {'detail': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'detail': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
     def get_queryset(self):
         """

@@ -24,7 +24,7 @@ import { useChat } from '@/hooks/useChat';
 interface ContactsListProps {
   channels: Channel[];
   users: User[]; // Make users optional with default value
-  onSelect: (id: string | number, type: 'channel' | 'user') => void;
+  onSelect: (id: string | number, type: 'channel' | 'user', e?: React.MouseEvent) => void;
   selectedId?: string | number;
   isLoading?: boolean;
 }
@@ -39,13 +39,39 @@ const ContactsList: React.FC<ContactsListProps> = ({
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const { startNewChat } = useChat();
+  const { startNewChat, currentUser } = useChat();
 
   
-  // Safely filter channels
-  const filteredChannels = (channels || []).filter(channel => 
-    channel?.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false
+  // Filter channels based on channel type and search query
+  const groupChannels = (channels || []).filter(channel => 
+    channel?.channel_type === 'group' && // Only include group channels
+    (channel?.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false)
   );
+  
+  // Filter direct message channels
+  const directMessageChannels = (channels || []).filter(channel => 
+    channel?.channel_type === 'direct' && // Only include direct messages
+    (channel?.name?.toLowerCase().includes(searchQuery.toLowerCase()) || false)
+  );
+  
+  // Map direct message channels to their respective users for UI association
+  const userDirectMessages = new Map<string | number, Channel>();
+  
+  if (directMessageChannels && directMessageChannels.length > 0) {
+    directMessageChannels.forEach(channel => {
+      if (channel.participations && channel.participations.length > 0) {
+        // For each direct message channel, find the other participant that isn't the current user
+        const otherParticipation = channel.participations.find(p => {
+          return p.user && currentUser && p.user.id !== currentUser.id;
+        });
+        
+        if (otherParticipation && otherParticipation.user && otherParticipation.user.id) {
+          // Map the channel to the other user's ID for easy lookup
+          userDirectMessages.set(otherParticipation.user.id.toString(), channel);
+        }
+      }
+    });
+  }
 
 
 // Debug log to check users prop
@@ -165,17 +191,24 @@ console.log('ContactsList - users:', users);
             </Box>
           </Box>
 
-          {filteredUsers.map(user => (
-            <ContactItem
-              key={`user-${user.id}`}
-              id={user.id}
-              name={`${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown User'}
-              avatar={user.avatar_url || '/images/avatars/avatar-default.png'}
-              isSelected={selectedId === user.id}
-              onClick={() => onSelect(user.id, 'user')}
-              isOnline={user.is_online === true} // Convert to boolean
-            />
-          ))}
+          {filteredUsers.map(user => {
+            // Check if this user has an existing direct message channel
+            const existingChannel = userDirectMessages.get(user.id.toString());
+            const userName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown User';
+            
+            return (
+              <ContactItem
+                key={`user-${user.id}`}
+                id={existingChannel ? existingChannel.id : user.id}
+                name={userName}
+                avatar={user.avatar_url || '/images/avatars/avatar-default.png'}
+                isSelected={selectedId === user.id || selectedId === existingChannel?.id}
+                onClick={(e) => onSelect(existingChannel ? existingChannel.id : user.id, existingChannel ? 'channel' : 'user', e)}
+                isOnline={user.is_online === true} // Convert to boolean
+                unreadCount={existingChannel?.unread_count || 0}
+              />
+            );
+          })}
           
           {/* Groups Section */}
           <Box sx={{ 
@@ -208,18 +241,20 @@ console.log('ContactsList - users:', users);
             </IconButton> */}
           </Box>
 
-          {filteredChannels.map(channel => (
+          {groupChannels.map(channel => (
             <ContactItem
               key={`channel-${channel.id}`}
               id={channel.id}
               name={channel.name}
               avatar={channel.avatar || '/images/avatars/group-default.png'}
               isSelected={selectedId === channel.id}
-              onClick={() => onSelect(channel.id, 'channel')}
+              onClick={(e) => onSelect(channel.id, 'channel', e)}
               isOnline={false}
               unreadCount={channel.unread_count}
             />
           ))}
+
+          {/* No separate Direct Messages section - they're associated with users */}
         </Box>
       </Box>
 
@@ -234,7 +269,7 @@ console.log('ContactsList - users:', users);
         alignItems: 'center'
       }}>
         <Typography variant="caption" color="text.secondary">
-          {filteredUsers.length} {t('users')} • {filteredChannels.length} {t('groups')}
+          {filteredUsers.length} {t('users')} • {groupChannels.length} {t('groups')}
         </Typography>
       </Box>
     </Box>

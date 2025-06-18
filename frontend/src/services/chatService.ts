@@ -256,26 +256,90 @@ class ChatService {
   }
 
   /**
-   * Create a new channel
+   * Create a new direct message channel with another user
    * 
-   * @param channelType - The type of channel ('direct' or 'group')
-   * @param participantIds - Array of user IDs to add to the channel
-   * @param name - Optional name for the channel (required for group channels)
-   * @returns The created channel
+   * @param userId - The ID of the user to start a direct message with
+   * @returns The created or existing direct message channel
    */
-  async createChannel(channelType: 'direct' | 'group', participantIds: (string | number)[], name?: string): Promise<Channel> {
+  async startDirectMessage(userId: string | number): Promise<Channel> {
     try {
+      console.log(`Starting direct message with user:`, userId);
+      
+      const url = getApiUrl('/channels/start_direct_message/', 'chat');
+      console.log('POST request URL:', url);
+      
+      const payload = {
+        user_id: userId
+      };
+      
+      console.log('Direct message payload:', payload);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Failed to create channel: ${response.status} ${response.statusText}`, errorText);
+        throw new Error(`Failed to create channel: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('Channel created successfully:', data);
+      
+      // Handle different API response formats
+      if (data && typeof data === 'object') {
+        if (data.id) {
+          return data as Channel;
+        } else if (data.data && data.data.id) {
+          return data.data as Channel;
+        }
+      }
+      
+      throw new Error('Invalid response format from channel creation API');
+    } catch (error) {
+      console.error('Error creating channel:', error);
+      throw error;
+    }
+  }
+
+
+  async createChannel(
+    channelType: 'group' | 'contextual_object',
+    participantIds: (string | number)[],
+    name: string,
+    context?: { type: string; id: string | number }
+  ): Promise<Channel> {
+    try {
+      if (!name) {
+        throw new Error('Channel name is required');
+      }
+      
+      if (!participantIds.length) {
+        throw new Error('At least one participant is required');
+      }
+      
       console.log(`Creating ${channelType} channel with participants:`, participantIds);
       
       const url = getApiUrl('/channels/', 'chat');
       console.log('POST request URL:', url);
       
-      const payload = {
+      const payload: any = {
         channel_type: channelType,
         participants: participantIds,
-        is_group: channelType === 'group',
-        name: channelType === 'group' && name ? name : undefined
+        name: name
       };
+      
+      // Add context for contextual channels
+      if (channelType === 'contextual_object' && context) {
+        payload.context_object_type = context.type;
+        payload.context_object_id = context.id;
+      }
       
       console.log('Channel creation payload:', payload);
       

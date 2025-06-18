@@ -763,32 +763,56 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
       
       // Determine if this is a direct or group chat
       const isGroup = userIds.length > 1;
-      const channelType = isGroup ? 'group' : 'direct';
       
-      // Get the current user's ID to include in participants if this is a direct message
-      const currentUserId = state.currentUser?.id;
+      let newChannel: Channel;
       
-      // For direct messages, make sure both users are included in participants
-      let participants = [...userIds];
-      if (!isGroup && currentUserId && !participants.includes(currentUserId)) {
-        participants.push(currentUserId);
+      if (isGroup) {
+        // For group chats, use createChannel with the provided name or generate one
+        if (!channelName) {
+          // Generate a default group name if not provided
+          const userNames = await Promise.all(
+            userIds.map(async (userId) => {
+              const user = state.users.find(u => String(u.id) === String(userId));
+              return user ? user.full_name || user.username : `User ${userId}`;
+            })
+          );
+          channelName = `Group: ${userNames.join(', ')}`;
+          // Truncate if too long
+          if (channelName.length > 50) {
+            channelName = channelName.substring(0, 47) + '...';
+          }
+        }
+        
+        console.log(`Creating group chat with participants:`, userIds);
+        
+        // Create a group channel
+        newChannel = await chatService.createChannel(
+          'group',
+          userIds,
+          channelName
+        );
+      } else {
+        // For direct messages, use the new startDirectMessage method
+        const otherUserId = userIds[0];
+        console.log(`Starting direct message with user:`, otherUserId);
+        
+        newChannel = await chatService.startDirectMessage(otherUserId);
+        
+        // Check if we already have this channel in our list
+        const existingChannel = state.channels.find(c => c.id === newChannel.id);
+        if (existingChannel) {
+          // If we already have this channel, just select it
+          await selectChannel(existingChannel.id);
+          return existingChannel;
+        }
       }
       
-      console.log(`Creating ${channelType} chat with participants:`, participants);
+      console.log('Channel created/retrieved:', newChannel);
       
-      // Create the channel on the backend
-      const newChannel = await chatService.createChannel(
-        channelType as 'direct' | 'group', 
-        participants,
-        channelName // Pass the channel name if provided
-      );
-      
-      console.log('Channel created:', newChannel);
-      
-      // Add the new channel to the channels list
+      // Add the new channel to the channels list if it's not already there
       setState(prev => ({
         ...prev,
-        channels: [newChannel, ...prev.channels],
+        channels: [newChannel, ...prev.channels.filter(c => c.id !== newChannel.id)],
         isLoading: false
       }));
       
