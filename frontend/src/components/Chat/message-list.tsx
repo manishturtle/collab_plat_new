@@ -251,19 +251,33 @@ const MessageList = ({
                     </Avatar>
                   )}
                   
-                  <Box sx={{ position: 'relative', maxWidth: '70%' }}>
+                  <Box sx={{ position: 'relative', maxWidth: '70%', '&:hover .reaction-picker': { opacity: 1 } }}>
                     {/* Reaction picker that shows on hover */}
                     <Box
+                      className="reaction-picker"
                       sx={{
                         position: 'absolute',
-                        right: message.is_own ? 'auto' : -6,
-                        left: message.is_own ? -6 : 'auto',
+                        right: message.is_own ? 'auto' : -12,
+                        left: message.is_own ? -12 : 'auto',
                         top: '50%',
                         transform: 'translateY(-50%)',
                         opacity: 0,
                         transition: 'opacity 0.2s ease',
-                        '&:hover': { opacity: 1 },
-                        '.message-container:hover &': { opacity: 0.8 }
+                        zIndex: 10,
+                        backgroundColor: theme => theme.palette.background.paper,
+                        borderRadius: '50%',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                        padding: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '28px',
+                        height: '28px',
+                        cursor: 'pointer',
+                        '&:hover': {
+                          backgroundColor: theme => theme.palette.action.hover,
+                          transform: 'translateY(-50%) scale(1.1)'
+                        }
                       }}
                     >
                       <ReactionPicker 
